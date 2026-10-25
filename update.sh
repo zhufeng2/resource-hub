@@ -32,7 +32,8 @@ main() {
   exec 9>"$cache_dir/lock"
   flock -n 9 || { echo '已有更新任务运行，本次跳过。'; return 0; }
   export GIT_TERMINAL_PROMPT=0
-  update_tmp=$(mktemp -d /tmp/resource-hub-update.XXXXXX)
+  # Bake permits project-local files without external fs.read privileges.
+  update_tmp=$(mktemp -d "$cache_dir/build.XXXXXX")
   trap cleanup EXIT
 
   echo '正在检查 GitHub main 分支…'

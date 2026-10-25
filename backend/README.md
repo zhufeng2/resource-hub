@@ -135,6 +135,8 @@ python -m backend.manage cleanup
 
 仓库 Dockerfile 与更新脚本均默认使用 `public.ecr.aws/docker/library/python:3.12-slim`，与此次服务器已验证可用的镜像来源保持一致。脚本通过临时 Dockerfile 支持使用 `RESOURCE_HUB_PYTHON_IMAGE` 环境变量指定其他来源，不修改仓库文件。首次运行会构建一次，之后相同的已成功部署提交自动跳过。手工上传的 `update.sh`、`compose.pansou.yaml` 若与远程内容一致，会先备份再纳入 Git 管理；内容不一致则停止。若仓库 Dockerfile 后续有改动，与服务器手工修改冲突时仍需人工合并。
 
+临时构建文件放在项目内的 `.cache/update/build.*`，退出时清理，避免新版 Bake 读取项目外 `/tmp` 文件时要求额外的 `fs.read` 权限。
+
 如需自动检查，执行 `crontab -e`，加入下面一行（路径按实际部署位置修改）：
 
 ```cron
