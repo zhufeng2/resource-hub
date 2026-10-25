@@ -270,3 +270,12 @@ body.has-results .ambient{opacity:0}
 .result-list .result-row{grid-template-columns:auto minmax(0,1fr);grid-template-areas:"icon main";align-items:start;cursor:pointer}
 .result-list .result-row:focus-visible{outline:3px solid #80ae92;outline-offset:2px}
 #input-error{text-align:center}
+/* Mobile login: 16px inputs prevent iOS focus zoom, and dynamic dialog height
+   keeps the focused field above the on-screen keyboard. */
+@media(max-width:760px){
+  .login-view{padding:24px 18px 40px;align-items:flex-start}
+  .login-card{width:100%}
+  .login-card input,.login-dialog input,dialog input{font-size:16px}
+  dialog{max-height:calc(100dvh - 16px)}
+  .login-dialog{overflow-y:auto}
+}
