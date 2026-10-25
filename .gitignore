@@ -18,5 +18,6 @@ codex/
 deepseek/
 temp/
 node_modules/
+backend/Dockerfile.backup
 skill-backups/
 skills/quarkclouddrive/scripts/*.cjs

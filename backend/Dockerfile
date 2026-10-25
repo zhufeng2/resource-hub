@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM public.ecr.aws/docker/library/python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HOME=/home/service \
     DATABASE_PATH=/data/service.sqlite3 RESOURCE_HUB_CACHE=/data/cache
 WORKDIR /app

@@ -133,7 +133,7 @@ python -m backend.manage cleanup
 
 脚本保留服务器 `.env` 和数据卷，更新网页、API 与 MCP，不重启 PanSou 或入口代理。Git 冲突会停止，不会强制覆盖本地修改。镜像构建失败时旧应用继续运行；替换应用后健康检查失败会报错，需要人工排查，脚本不自动回滚数据库或容器。Caddy 配置或部署结构变更仍需另行处理。
 
-默认通过 `public.ecr.aws/docker/library/python:3.12-slim` 构建临时 Dockerfile，适配此次部署已验证可用的镜像来源，不修改仓库 Dockerfile；可用 `RESOURCE_HUB_PYTHON_IMAGE` 环境变量指定其他来源。脚本首次运行会构建一次，之后相同的已成功部署提交自动跳过。已有的手工 `compose.pansou.yaml` 若与远程内容一致，会先备份再纳入 Git 管理；内容不一致则停止。若仓库 Dockerfile 后续有改动，与服务器手工修改冲突时仍需人工合并。
+仓库 Dockerfile 与更新脚本均默认使用 `public.ecr.aws/docker/library/python:3.12-slim`，与此次服务器已验证可用的镜像来源保持一致。脚本通过临时 Dockerfile 支持使用 `RESOURCE_HUB_PYTHON_IMAGE` 环境变量指定其他来源，不修改仓库文件。首次运行会构建一次，之后相同的已成功部署提交自动跳过。手工上传的 `update.sh`、`compose.pansou.yaml` 若与远程内容一致，会先备份再纳入 Git 管理；内容不一致则停止。若仓库 Dockerfile 后续有改动，与服务器手工修改冲突时仍需人工合并。
 
 如需自动检查，执行 `crontab -e`，加入下面一行（路径按实际部署位置修改）：
 
