@@ -70,14 +70,6 @@ docker compose --project-directory backend --env-file backend/.env -f backend/co
 
 服务启动后，访问 `https://你的域名/healthz` 检查状态。如果 HTTPS 证书申请失败，检查域名解析、80/443 端口和 Caddy 日志。
 
-如需同时部署 PanSou 后端，在 `.env` 中配置 `PANSOU_USERNAME`、`PANSOU_PASSWORD` 和强随机的 `PANSOU_JWT_SECRET`，使用附加配置启动：
-
-```bash
-docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml -f backend/compose.pansou.yaml up -d --build
-```
-
-此配置通过内部网络连接 PanSou，其 8888 端口不映射到宿主机。可用 `PANSOU_PLUGINS` 指定启用的插件。管理命令也需使用相同的两个 `-f` 参数。
-
 ### 3. 创建账号
 
 ```bash

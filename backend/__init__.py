@@ -1,1 +1,1 @@
-"""Optional hosted PanSou service. Local skill installation does not import this package."""
+"""Hosted Resource Hub web and MCP service shared by the browser UI and ChatGPT clients."""
