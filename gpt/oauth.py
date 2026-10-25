@@ -14,8 +14,17 @@ from backend.store import digest
 NO_STORE = {'Cache-Control': 'no-store', 'Pragma': 'no-cache'}
 
 
-def error(name, status=400):
-    return JSONResponse({'error': name}, status_code=status, headers=NO_STORE)
+def error(name, status=400, description=None):
+    body = {'error': name}
+    if description:
+        body['error_description'] = description
+    return JSONResponse(body, status_code=status, headers=NO_STORE)
+
+
+def authorization_cookie(ticket):
+    # Each login page needs its own binding: a second tab or a refresh must not
+    # invalidate another pending authorization in the same browser.
+    return 'rh_authorize_' + digest(ticket)[:24]
 
 
 def callback(uri, params):
@@ -117,7 +126,7 @@ class OAuth:
             return self.redirect(p, error=invalid)
         ticket = self.store.ticket(p)
         response = login_page(ticket)
-        response.set_cookie('rh_authorize', ticket, max_age=600, httponly=True,
+        response.set_cookie(authorization_cookie(ticket), ticket, max_age=600, httponly=True,
                             secure=self.settings.secure, samesite='lax', path='/oauth/authorize')
         return response
 
@@ -133,16 +142,25 @@ class OAuth:
             return error('invalid_origin', 403)
         form = await request.form()
         ticket = str(form.get('ticket', ''))
-        cookie = request.cookies.get('rh_authorize', '')
+        cookie = request.cookies.get(authorization_cookie(ticket), '')
+        # Allow an already-open login page to finish after an application update.
+        if not cookie:
+            cookie = request.cookies.get('rh_authorize', '')
         p = self.store.ticket_params(ticket)
-        if (not ticket or not hmac.compare_digest(ticket, cookie) or not p
-                or p['redirect_uri'] not in self.settings.redirect_uris):
-            return error('authorization_expired_or_invalid', 403)
+        if not ticket or not p:
+            return error('authorization_expired_or_invalid', 403,
+                         '授权页面已过期或已使用，请返回 ChatGPT 重新发起连接，并在 10 分钟内完成登录。')
+        if not cookie or not hmac.compare_digest(ticket.encode(), cookie.encode()):
+            return error('authorization_expired_or_invalid', 403,
+                         '浏览器未携带此授权页面的有效 Cookie。请允许本站 Cookie，返回 ChatGPT 重新连接，并在同一浏览器完成登录。')
+        if p['redirect_uri'] not in self.settings.redirect_uris:
+            return error('authorization_expired_or_invalid', 403,
+                         '授权回调地址配置已变化，请返回 ChatGPT 重新连接；如仍失败，请联系管理员检查回调配置。')
         if form.get('action') == 'deny':
             with self.store.connection(True) as db:
                 db.execute('DELETE FROM tickets WHERE id=?', (digest(ticket),))
             response = self.redirect(p, error='access_denied')
-            response.delete_cookie('rh_authorize', path='/oauth/authorize')
+            response.delete_cookie(authorization_cookie(ticket), path='/oauth/authorize')
             return response
         username, password = str(form.get('username', '')), str(form.get('password', ''))
         if len(username) > 64 or len(password) > 256 or form.get('action') != 'allow':
@@ -155,9 +173,10 @@ class OAuth:
         try:
             code, p = self.store.authorize(ticket, user['id'])
         except ValueError:
-            return error('authorization_expired_or_invalid', 403)
+            return error('authorization_expired_or_invalid', 403,
+                         '授权请求已失效或账号已停用，请返回 ChatGPT 重新连接；如仍失败，请联系管理员。')
         response = self.redirect(p, code=code)
-        response.delete_cookie('rh_authorize', path='/oauth/authorize')
+        response.delete_cookie(authorization_cookie(ticket), path='/oauth/authorize')
         return response
 
     async def token(self, request):

@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from pathlib import Path
 import tempfile
 import time
@@ -17,6 +18,7 @@ from backend.app import create_app
 from backend.backend import SearchFailure, search_pansou
 from backend.config import Settings
 from backend.store import Store, day_key, pkce
+from gpt.oauth import authorization_cookie
 
 logging.getLogger('httpx').setLevel(logging.WARNING)
 
@@ -70,7 +72,7 @@ class ServiceTests(unittest.TestCase):
         response = self.client.get('/oauth/authorize', params=params)
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.headers['referrer-policy'], 'same-origin')
-        ticket = self.client.cookies['rh_authorize']
+        ticket = re.search(r'name="ticket" value="([^"]+)"', response.text)[1]
         response = self.client.post('/oauth/authorize', data={
             'ticket': ticket, 'username': username, 'password': PASSWORD, 'action': 'allow'},
             headers={'Origin': BASE}, follow_redirects=False)
@@ -162,8 +164,8 @@ class ServiceTests(unittest.TestCase):
         # Use a fresh authorization code to exercise rejected exchanges before successful redemption.
         p = {'client_id': client_id, 'redirect_uri': CALLBACK, 'response_type': 'code',
              'resource': self.settings.resource, 'code_challenge_method': 'S256', 'code_challenge': pkce('z' * 43)}
-        self.client.get('/oauth/authorize', params=p)
-        ticket = self.client.cookies['rh_authorize']
+        response = self.client.get('/oauth/authorize', params=p)
+        ticket = re.search(r'name="ticket" value="([^"]+)"', response.text)[1]
         form = {'ticket': 'wrong', 'username': 'alice', 'password': PASSWORD, 'action': 'allow'}
         self.assertEqual(self.client.post('/oauth/authorize', data=form).status_code, 403)
         form['ticket'] = ticket
@@ -244,14 +246,76 @@ class ServiceTests(unittest.TestCase):
         self.store.cleanup()
         self.assertIsNone(self.store.search(user['id'], retry['id']))
 
+    def authorization_page(self, client_id, state):
+        response = self.client.get('/oauth/authorize', params={
+            'client_id': client_id, 'redirect_uri': CALLBACK, 'response_type': 'code',
+            'resource': self.settings.resource, 'code_challenge_method': 'S256',
+            'code_challenge': pkce('a' * 43), 'state': state})
+        self.assertEqual(response.status_code, 200)
+        return re.search(r'name="ticket" value="([^"]+)"', response.text)[1]
+
+    def test_parallel_authorization_pages_keep_independent_cookies(self):
+        client_id = self.store.register([CALLBACK])
+        first = self.authorization_page(client_id, 'first-tab')
+        second = self.authorization_page(client_id, 'second-tab')
+        for ticket, state in [(first, 'first-tab'), (second, 'second-tab')]:
+            self.assertEqual(self.client.cookies[authorization_cookie(ticket)], ticket)
+            response = self.client.post('/oauth/authorize', data={
+                'ticket': ticket, 'username': 'alice', 'password': PASSWORD, 'action': 'allow'},
+                headers={'Origin': BASE}, follow_redirects=False)
+            self.assertEqual(response.status_code, 303, response.text)
+            callback = parse_qs(urlsplit(response.headers['location']).query)
+            self.assertEqual(callback['state'], [state])
+            self.assertIn('code', callback)
+            self.assertNotIn(authorization_cookie(ticket), self.client.cookies)
+        # Consumed tickets cannot be replayed even if the form is resubmitted.
+        response = self.client.post('/oauth/authorize', data={
+            'ticket': first, 'username': 'alice', 'password': PASSWORD, 'action': 'allow'})
+        self.assertEqual(response.status_code, 403)
+        self.assertIn('已使用', response.json()['error_description'])
+
+    def test_authorization_cookie_required_and_password_retry(self):
+        client_id = self.store.register([CALLBACK])
+        ticket = self.authorization_page(client_id, 'retry')
+        form = {'ticket': ticket, 'username': 'alice', 'password': PASSWORD, 'action': 'allow'}
+        self.client.cookies.clear()
+        response = self.client.post('/oauth/authorize', data=form)
+        self.assertEqual(response.status_code, 403)
+        self.assertIn('Cookie', response.json()['error_description'])
+        self.client.cookies.set(authorization_cookie(ticket), 'wrong')
+        self.assertEqual(self.client.post('/oauth/authorize', data=form).status_code, 403)
+        self.client.cookies.set(authorization_cookie(ticket), ticket)
+        response = self.client.post('/oauth/authorize', data={**form, 'password': 'wrong'})
+        self.assertEqual(response.status_code, 401)
+        self.assertIn(ticket, response.text)
+        self.assertEqual(self.client.post('/oauth/authorize', data=form,
+                                         follow_redirects=False).status_code, 303)
+
+    def test_expired_authorization_and_legacy_page(self):
+        client_id = self.store.register([CALLBACK])
+        ticket = self.authorization_page(client_id, 'expired')
+        with self.store.connection(True) as db:
+            db.execute('UPDATE tickets SET expires=0')
+        response = self.client.post('/oauth/authorize', data={'ticket': ticket, 'action': 'deny'})
+        self.assertEqual(response.status_code, 403)
+        self.assertIn('10 分钟', response.json()['error_description'])
+        ticket = self.authorization_page(client_id, 'legacy')
+        self.client.cookies.clear()
+        self.client.cookies.set('rh_authorize', ticket)
+        response = self.client.post('/oauth/authorize', data={'ticket': ticket, 'action': 'deny'},
+                                    follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(parse_qs(urlsplit(response.headers['location']).query)['error'], ['access_denied'])
+
     def test_deny_and_transport_validation(self):
         _, client_id, _ = self.login()
         params = {'client_id': client_id, 'redirect_uri': CALLBACK, 'response_type': 'code',
                   'resource': self.settings.resource, 'code_challenge_method': 'S256', 'code_challenge': pkce('a' * 43),
                   'state': 'deny-state'}
-        self.client.get('/oauth/authorize', params=params)
+        response = self.client.get('/oauth/authorize', params=params)
+        ticket = re.search(r'name="ticket" value="([^"]+)"', response.text)[1]
         response = self.client.post('/oauth/authorize', data={
-            'ticket': self.client.cookies['rh_authorize'], 'action': 'deny'}, follow_redirects=False)
+            'ticket': ticket, 'action': 'deny'}, follow_redirects=False)
         callback = parse_qs(urlsplit(response.headers['location']).query)
         self.assertEqual(callback['error'], ['access_denied'])
         self.assertEqual(callback['iss'], [BASE])
