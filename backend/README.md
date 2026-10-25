@@ -81,11 +81,11 @@ docker compose --project-directory backend --env-file backend/.env -f backend/co
 ### 3. 创建账号
 
 ```bash
-docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app python -m backend.manage add-user alice --admin
+docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app python -m backend.manage add-user admin --admin
 docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app python -m backend.manage add-user bob --limit 5
 ```
 
-按提示输入至少 12 个字符的密码。首个管理员通过命令创建，之后可在网页“账号 → 用户管理”中创建其他用户。已有账号可用 `python -m backend.manage make-admin alice` 设置为管理员。
+按提示输入至少 12 个字符的密码。使用 `admin` 账号管理用户。首次通过命令创建，之后可在网页“账号 → 用户管理”中创建其他用户。已有账号可用 `python -m backend.manage make-admin alice` 设置为管理员。
 
 验证 PanSou 配置：
 

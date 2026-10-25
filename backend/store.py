@@ -8,6 +8,7 @@ import re
 import secrets
 import sqlite3
 import time
+import unicodedata
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -160,11 +161,25 @@ class Store:
         return {**defaults, **(json.loads(row['value']) if row else {})}
 
     def recent(self, user_id):
+        items, seen = [], set()
         with self.connection() as db:
-            rows = db.execute("""SELECT id,result,created FROM searches WHERE user_id=?
-                AND status='done' AND created>? AND result IS NOT NULL ORDER BY created DESC LIMIT 12""",
-                (user_id, time.time() - 86400)).fetchall()
-        return [{'id': r['id'], 'query': json.loads(r['result']).get('query', ''), 'created': r['created']} for r in rows]
+            rows = db.execute("""SELECT id,query,created FROM searches WHERE user_id=?
+                AND status='done' AND created>? AND result IS NOT NULL ORDER BY created DESC,id DESC""",
+                (user_id, time.time() - 86400))
+            for row in rows:
+                try:
+                    value = json.loads(row['query'])
+                    query = value.get('query', '') if isinstance(value, dict) else row['query']
+                except (ValueError, TypeError):
+                    query = row['query']
+                key = ' '.join(unicodedata.normalize('NFKC', query).split()).casefold()
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                items.append({'id': row['id'], 'query': query, 'created': row['created']})
+                if len(items) == 12:
+                    break
+        return items
 
     def bindings(self, user_id):
         with self.connection() as db:

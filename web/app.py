@@ -58,7 +58,7 @@ class Web:
         return data
 
     def profile(self, user):
-        return {'id': str(user['id']), 'account_status': 'active', 'username': user['username'], 'is_admin': bool(user['is_admin']),
+        return {'id': str(user['id']), 'account_status': 'active', 'username': user['username'], 'is_admin': bool(user['is_admin']), 'can_manage_users': bool(user['is_admin']) and user['username'] == 'admin',
                 'quota': self.store.quota(user['id']), 'preferences': self.store.preferences(user['id']),
                 'csrf': user['csrf'], 'mcp_url': self.settings.resource,
                 'preview': bool(getattr(self.upstream, 'preview', False))}
@@ -164,6 +164,8 @@ class Web:
 
     async def users(self, request):
         admin = self.user(request, write=request.method != 'GET', admin=True)
+        if admin['username'] != 'admin':
+            raise WebError('仅 admin 账号可以管理用户。', 403)
         if request.method == 'GET':
             return reply({'items': self.store.users()})
         data = await self.body(request)

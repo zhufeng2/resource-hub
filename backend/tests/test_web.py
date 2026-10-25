@@ -55,6 +55,7 @@ class WebTests(unittest.TestCase):
                 if hasattr(handler, '__self__') and hasattr(handler.__self__, 'upstream'):
                     handler.__self__.upstream = self.fake
         self.store.change_user('alice', is_admin=True)
+        self.store.add_user('admin', PASSWORD, 5, is_admin=True)
 
     def web_login(self, username='alice'):
         response = self.client.get('/api/session')
@@ -90,15 +91,15 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/users').status_code, 403)
         invalid = self.client.put('/api/preferences', json={'admin': True}, headers=headers)
         self.assertEqual(invalid.status_code, 400)
-        headers = self.web_login('alice')
+        headers = self.web_login('admin')
         created = self.client.post('/api/users', json={'username': 'charlie', 'password': PASSWORD, 'daily_limit': 7}, headers=headers)
         self.assertEqual(created.status_code, 200, created.text)
         self.assertEqual(self.store.login('charlie', PASSWORD)['daily_limit'], 7)
         config = {'cloud_types': ['baidu'], 'auto_check': True, 'theme': 'dark'}
         saved = self.client.put('/api/preferences', json=config, headers=headers)
         self.assertEqual(saved.status_code, 200, saved.text)
-        self.assertEqual(self.store.preferences(1)['cloud_types'], ['baidu'])
-        tokens, _, _ = self.login()
+        self.assertEqual(self.store.preferences(self.store.login('admin', PASSWORD)['id'])['cloud_types'], ['baidu'])
+        tokens, _, _ = self.login('admin')
         self.assertEqual(self.client.post('/api/connections/revoke', json={}, headers=headers).status_code, 200)
         self.assertIsNone(self.store.authenticate(tokens['access_token'], self.settings.resource))
 
