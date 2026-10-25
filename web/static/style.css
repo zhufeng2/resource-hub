@@ -184,48 +184,18 @@ body:not(.has-results) .search-box:not(:focus-within){animation:enter .5s .17s b
 @media(max-width:760px){.ambient-grid{opacity:.32}.ambient-stars{opacity:.48}.ambient-sheen{opacity:.24}}
 @media(max-width:480px){.footer{padding:24px 16px 28px}.footer-bar{gap:9px;padding:7px 13px 7px 11px}.footer-brand{font-size:10px}.footer-note{font-size:9px}.search-center:before{height:260px}.mote-five,.mote-seven{display:none}}
 
-/* Settings focus mode: compact the search box and lift the sheet into the viewport. */
-body.settings-open{height:100svh;min-height:0;overflow:hidden}
-body.settings-open main{flex:1 1 auto;min-height:0;display:flex}
-body.settings-open .home-view{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;width:100%;padding-bottom:0}
-body.settings-open .search-stage{display:flex;flex:1 1 auto;flex-direction:column;min-height:0;position:relative;top:auto;padding:6px clamp(18px,4vw,48px) 0;overflow:hidden;background:transparent;backdrop-filter:none;border-bottom:0;transition:padding-top .34s cubic-bezier(.22,.8,.28,1),padding-bottom .34s cubic-bezier(.22,.8,.28,1)}
-body.settings-open .search-center{display:flex;flex:1 1 auto;flex-direction:column;min-height:0;width:100%}
-body.settings-open .results-region{display:none}
-body.settings-open .hero-intro{grid-template-rows:0fr;opacity:0;transform:translateY(-10px);pointer-events:none;transition:grid-template-rows .34s cubic-bezier(.22,.8,.28,1),opacity .26s,transform .34s cubic-bezier(.22,.8,.28,1);will-change:opacity,transform}
-body.settings-open .home-history,body.settings-open .footer{display:none}
-body.settings-open .search-context{max-height:0;min-height:0;padding-top:0;padding-bottom:0;overflow:hidden;visibility:hidden;border:0}
-body.settings-open .search-center:before{opacity:0;animation:none}
-body.settings-open .settings-disclosure{display:flex;flex:1 1 auto;min-height:0;margin-top:8px;padding-bottom:10px;opacity:1;transform:none;pointer-events:auto;transition:opacity .25s,transform .25s}
-body.settings-open .settings-clip{display:flex;flex:1 1 auto;min-height:0;width:100%;overflow:visible;align-items:flex-start}
-body.settings-open .settings-sheet{flex:0 0 auto;width:100%;min-height:0;height:auto;max-height:100%;overflow-y:auto;overscroll-behavior:auto;margin:0;border-radius:14px;padding:18px 24px 14px;animation:settingsUp .34s cubic-bezier(.22,.8,.28,1) both;will-change:transform,opacity}
-body.settings-open .setting-group{padding:11px 0}
-body.settings-open .choice-grid{margin-top:10px;gap:7px 12px}
-body.settings-open .choice-item{min-height:28px}
-body.settings-open .settings-sheet label{margin-bottom:10px}
-body.settings-open .settings-sheet input,body.settings-open .settings-sheet textarea{padding:8px 11px}
-body.settings-open .toggle-row{min-height:32px;margin:2px 0}
-body.settings-open .advanced-settings summary{padding:13px 0}
-body.settings-open .settings-footer{padding-top:10px}
-@keyframes settingsUp{from{opacity:0;transform:translateY(12px) scale(.995)}to{opacity:1;transform:translateY(0) scale(1)}}
-@media(min-width:900px){body.settings-open .choice-grid{grid-template-columns:repeat(8,minmax(0,1fr))}}
-@media(max-height:820px) and (min-width:600px){body.settings-open .settings-sheet{padding:14px 22px 14px}body.settings-open .settings-heading p,body.settings-open .setting-group .field-help{display:none}body.settings-open .setting-group{padding:9px 0}body.settings-open .settings-sheet label{margin-bottom:8px}body.settings-open .toggle-row{min-height:30px;margin:1px 0}body.settings-open .advanced-settings summary{padding:10px 0}body.settings-open .settings-footer{padding-top:10px}}
-@media(max-width:480px){body.settings-open .search-stage{padding:6px 14px 0}body.settings-open .settings-sheet{padding:16px 14px 18px;border-radius:12px}body.settings-open .settings-disclosure{margin-top:8px}}
-
 /* Blend the sticky search bar into the results without a visible rule. */
 body.has-results .search-stage{border-bottom:0;box-shadow:none}
 body.has-results .search-stage:after{content:none}
-body.settings-open .search-stage{box-shadow:none}
-body.settings-open .search-stage:after{display:none}
 
 /* Understated admin quota summary. */
 #account-unlimited-row dd{display:flex;align-items:baseline;gap:10px}
 #account-unlimited-row .account-unlimited{font-size:13px;font-weight:600;color:var(--accent)}
 .account-unlimited-note{font-size:11px;font-weight:450;color:var(--muted)}
-/* Keep layout stable when the page locks, and cross-fade theme colors. */
+/* Keep layout stable when a dialog locks page scrolling. */
 html{scrollbar-gutter:stable}
-html.theme-switching,html.theme-switching *,html.theme-switching *::before,html.theme-switching *::after{transition:background-color .32s ease,color .32s ease,border-color .32s ease,box-shadow .32s ease,fill .32s ease,stroke .32s ease}
 body.has-results .header{border-bottom:0;box-shadow:none}
-body.has-results:not(.settings-open) .search-stage{background:linear-gradient(180deg,var(--veil) 0,var(--veil) calc(100% - 14px),transparent 100%);-webkit-backdrop-filter:none;backdrop-filter:none}
+body.has-results .search-stage{background:linear-gradient(180deg,var(--veil) 0,var(--veil) calc(100% - 14px),transparent 100%);-webkit-backdrop-filter:none;backdrop-filter:none}
 .ambient{transition:opacity .45s ease}
 body.has-results .ambient{opacity:0}
 /* Cloud-drive style result cards. */

@@ -1,0 +1,114 @@
+/* Stable first paint and focus: never replay the search form's entrance animation. */
+html[data-initial-view=profile] #home-view { display:none; }
+html[data-initial-view=results] .hero-intro,
+body.has-results .hero-intro { display:none; }
+html[data-initial-view=results] .search-stage { padding-top:12px; padding-bottom:5px; }
+html[data-initial-view=results] .home-history { display:none; }
+.search-stage, .hero-intro, .search-context { transition:none; }
+.search-box,
+body:not(.has-results) .search-box:not(:focus-within) { animation:none; }
+.search-context { animation:none; }
+.search-stage { padding-top:clamp(70px,16svh,152px); }
+
+/* A small settings button opens a separate surface without changing page geometry. */
+.settings-toggle {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:auto; max-width:100%; min-width:0; min-height:44px; padding:8px 14px; gap:8px; flex:none;
+  border:1px solid transparent; border-radius:24px; background:transparent;
+  color:var(--muted); transition:background-color .15s,color .15s;
+}
+.settings-toggle:hover { color:var(--accent); background:var(--soft); }
+.settings-toggle svg { width:17px; height:17px; flex:none; }
+.settings-toggle-label { flex:none; font-size:12px; }
+.settings-toggle .settings-summary {
+  flex:0 1 auto; min-width:0; max-width:280px; margin:0 0 0 4px;
+  padding-left:12px; border-left:1px solid var(--line); font-size:11px; text-align:left;
+}
+.settings-toggle .settings-summary:empty { display:none; }
+.search-context { justify-content:center; gap:0; padding:6px 0; }
+body.settings-open { overflow:hidden; }
+.settings-dialog {
+  width:min(680px,calc(100% - 40px)); max-width:680px;
+  max-height:calc(100svh - 48px); max-height:calc(100dvh - 48px);
+  padding:0; border-radius:20px; overflow:hidden; animation:none;
+}
+.settings-dialog[open] { animation:settingsPageIn .16s ease-out; }
+.settings-dialog::backdrop { background:rgba(12,25,18,.36); backdrop-filter:none; }
+.settings-dialog .settings-sheet {
+  display:flex; flex-direction:column; min-height:0;
+  max-height:calc(100svh - 50px); max-height:calc(100dvh - 50px);
+  padding:0; margin:0; border:0; border-radius:0; box-shadow:none;
+}
+.settings-dialog .settings-heading { flex:none; padding:22px 26px; border-bottom:1px solid var(--line); }
+.settings-dialog .settings-heading h2 { font-size:20px; }
+.settings-back {
+  display:inline-flex; align-items:center; gap:7px; min-height:44px;
+  padding:8px 0; color:var(--ink); white-space:nowrap;
+}
+.settings-back svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.7; }
+.settings-body { overflow-y:auto; overscroll-behavior:contain; padding:0 26px; min-height:0; }
+.settings-dialog .settings-footer {
+  flex:none; margin:0; padding:14px 26px; background:var(--surface); gap:12px;
+}
+.settings-footer-actions { display:flex; align-items:center; gap:14px; }
+.settings-dialog .settings-footer .primary { min-height:44px; font-size:12px; }
+.settings-dialog .choice-item { min-height:40px; }
+.settings-dialog .advanced-settings summary { min-height:48px; }
+.settings-dialog .details-content { animation:none; }
+.settings-dialog .settings-heading p { font-size:12px; }
+@keyframes settingsPageIn { from { opacity:.6; transform:translateY(6px); } to { opacity:1; transform:none; } }
+
+/* Keep a little desktop motion, with only two low-contrast composited layers. */
+.ambient { height:100lvh; bottom:auto; contain:paint; transition:none; }
+.ambient::before, .ambient::after { content:none; }
+.ambient > :not(.ambient-aurora):not(.ambient-grid) { display:none; }
+.ambient-aurora {
+  width:min(1050px,120vw); top:40%; opacity:.65;
+  animation:ambientDrift 40s ease-in-out infinite alternate;
+}
+.ambient-grid { inset:0; animation:none; will-change:auto; opacity:.2; }
+body:not(.has-results) .search-center::before { animation:none; opacity:.55; }
+@keyframes ambientDrift {
+  from { transform:translate(-53%,-50%); }
+  to { transform:translate(-47%,-46%); }
+}
+
+@media(max-width:760px), (hover:none) {
+  /* Mobile keyboards change the visual viewport; large-viewport backgrounds stay fixed. */
+  .ambient { background:radial-gradient(ellipse at 30% 25%,var(--aurora-a),transparent 65%); }
+  .ambient > * { display:none; }
+  .ambient, body.has-results .ambient { opacity:1; }
+  body:not(.has-results) .search-center::before { content:none; }
+  .hero-symbol, .hero-symbol i, .hero-inner h1, .hero-inner p { animation:none; }
+  body.has-results .header { background:var(--bg); -webkit-backdrop-filter:none; backdrop-filter:none; }
+  dialog::backdrop { -webkit-backdrop-filter:none; backdrop-filter:none; }
+  .search-box { transition:border-color .15s; box-shadow:none; }
+  .search-box:focus-within { box-shadow:none; }
+  .search-stage { padding-top:clamp(64px,13svh,112px); }
+  input:not([type=checkbox]):not([type=file]), textarea, select,
+  .settings-sheet input:not([type=checkbox]), .settings-sheet textarea { font-size:16px; }
+  .result-list .result-row:hover { transform:none; box-shadow:none; }
+  .settings-dialog[open] { animation:none; }
+}
+
+@media(max-width:600px) {
+  .settings-dialog {
+    inset:0; margin:0; width:100%; max-width:none;
+    height:100svh; height:100dvh; max-height:100svh; max-height:100dvh;
+    border:0; border-radius:0;
+  }
+  .settings-dialog .settings-sheet { height:100%; max-height:none; }
+  .settings-dialog .settings-heading { padding:calc(14px + env(safe-area-inset-top)) 20px 14px; }
+  .settings-dialog .settings-heading h2 { font-size:19px; }
+  .settings-body { flex:1; padding:0 20px; }
+  .settings-dialog .settings-footer { padding:12px 20px calc(12px + env(safe-area-inset-bottom)); }
+  .settings-dialog .form-grid { grid-template-columns:1fr; gap:0; }
+  .settings-dialog .choice-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .settings-dialog .settings-sheet label { font-size:12px; }
+  .settings-footer-actions { gap:10px; }
+}
+
+@media(prefers-reduced-motion:reduce) {
+  .settings-dialog[open], .ambient-aurora { animation:none; }
+  .ambient-aurora { will-change:auto; }
+}
