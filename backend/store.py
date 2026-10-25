@@ -309,23 +309,24 @@ class Store:
     def quota(self, user_id, now=None):
         now = time.time() if now is None else now
         with self.connection() as db:
-            user = db.execute('SELECT daily_limit FROM users WHERE id=? AND enabled=1', (user_id,)).fetchone()
+            user = db.execute('SELECT daily_limit,is_admin FROM users WHERE id=? AND enabled=1', (user_id,)).fetchone()
             if not user:
                 raise ValueError('账号已停用')
             rows = db.execute('''SELECT status,COUNT(*) n FROM searches WHERE user_id=? AND day=?
                 AND (status='done' OR (status='pending' AND created>?)) GROUP BY status''',
                 (user_id, day_key(now), now - 180)).fetchall()
         counts = {r['status']: r['n'] for r in rows}
+        unlimited = bool(user['is_admin'])
         reset = datetime.fromtimestamp(now, SHANGHAI).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-        return {'daily_limit': user['daily_limit'], 'used': counts.get('done', 0),
-                'in_progress': counts.get('pending', 0),
-                'remaining': max(0, user['daily_limit'] - sum(counts.values())),
+        return {'daily_limit': None if unlimited else user['daily_limit'], 'used': counts.get('done', 0),
+                'in_progress': counts.get('pending', 0), 'unlimited': unlimited,
+                'remaining': None if unlimited else max(0, user['daily_limit'] - sum(counts.values())),
                 'resets_at': reset.isoformat()}
 
     def reserve(self, user_id, request_id, query):
         now = time.time()
         with self.connection(True) as db:
-            user = db.execute('SELECT daily_limit FROM users WHERE id=? AND enabled=1', (user_id,)).fetchone()
+            user = db.execute('SELECT daily_limit,is_admin FROM users WHERE id=? AND enabled=1', (user_id,)).fetchone()
             if not user:
                 raise ValueError('account_disabled')
             old = db.execute('SELECT * FROM searches WHERE user_id=? AND request_id=?', (user_id, request_id)).fetchone()
@@ -336,10 +337,11 @@ class Store:
                     return dict(old), False
                 if old['status'] == 'pending' and old['created'] > now - 180:
                     raise ValueError('search_in_progress')
-            count = db.execute('''SELECT COUNT(*) FROM searches WHERE user_id=? AND day=?
-                AND (status='done' OR (status='pending' AND created>?))''', (user_id, day_key(now), now - 180)).fetchone()[0]
-            if count >= user['daily_limit']:
-                raise ValueError('daily_limit_reached')
+            if not user['is_admin']:
+                count = db.execute('''SELECT COUNT(*) FROM searches WHERE user_id=? AND day=?
+                    AND (status='done' OR (status='pending' AND created>?))''', (user_id, day_key(now), now - 180)).fetchone()[0]
+                if count >= user['daily_limit']:
+                    raise ValueError('daily_limit_reached')
             # A retry after failure receives a new internal ID, so a late worker cannot finish it.
             if old:
                 db.execute('DELETE FROM searches WHERE id=?', (old['id'],))

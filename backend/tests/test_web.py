@@ -103,6 +103,20 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/connections/revoke', json={}, headers=headers).status_code, 200)
         self.assertIsNone(self.store.authenticate(tokens['access_token'], self.settings.resource))
 
+    def test_admin_quota_is_unlimited(self):
+        self.store.change_user('admin', limit=0)
+        headers = self.web_login('admin')
+        result = self.client.post('/api/search', json={'query': 'test', 'request_id': 'admin-unlimited'}, headers=headers)
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertTrue(result.json()['quota']['unlimited'])
+        self.assertIsNone(result.json()['quota']['daily_limit'])
+        self.assertIsNone(result.json()['quota']['remaining'])
+        self.store.change_user('bob', limit=0)
+        headers = self.web_login('bob')
+        blocked = self.client.post('/api/search', json={'query': 'test'}, headers=headers)
+        self.assertEqual(blocked.status_code, 429, blocked.text)
+        self.assertEqual(blocked.json()['error'], 'daily_limit_reached')
+
     def test_binding_ownership_and_test_search_quota(self):
         headers = self.web_login()
         response = self.client.post('/api/bindings', json={'provider': 'gying', 'label': 'my account'}, headers=headers)
