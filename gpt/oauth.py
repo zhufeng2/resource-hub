@@ -2,6 +2,8 @@
 import asyncio
 import hmac
 import html
+import logging
+import os
 import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -12,6 +14,7 @@ from starlette.routing import Route
 from backend.store import digest
 
 NO_STORE = {'Cache-Control': 'no-store', 'Pragma': 'no-cache'}
+log = logging.getLogger('uvicorn.error')
 
 
 def error(name, status=400, description=None):
@@ -47,10 +50,10 @@ def login_page(ticket, message='', status=200):
 <label for="password">密码<input id="password" type="password" name="password" autocomplete="current-password" maxlength="256" required></label>
 <button class="primary full" name="action" value="allow">登录并授权搜索 ↗</button>
 <button class="text-button full" name="action" value="deny" formnovalidate>取消</button></form>
-<p class="login-help">需要账号或忘记密码？请联系管理员。</p></div></section></main></body></html>''',
+<p class="login-help">需要账号或忘记密码？请联系管理员。</p></div></section></main><script src="/assets/authorize.js" defer></script></body></html>''',
         # no-referrer makes browser form POSTs send Origin: null, failing our origin check.
         status_code=status, headers={**NO_STORE, 'Referrer-Policy': 'same-origin',
-            'Content-Security-Policy': "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+            'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
             'X-Frame-Options': 'DENY', 'X-Content-Type-Options': 'nosniff'})
     return response
 
@@ -125,6 +128,7 @@ class OAuth:
         if invalid:
             return self.redirect(p, error=invalid)
         ticket = self.store.ticket(p)
+        log.info('OAuth ticket issued ticket=%s db=%s pid=%s', digest(ticket)[:12], self.store.path, os.getpid())
         response = login_page(ticket)
         response.set_cookie(authorization_cookie(ticket), ticket, max_age=600, httponly=True,
                             secure=self.settings.secure, samesite='lax', path='/oauth/authorize')
@@ -148,9 +152,11 @@ class OAuth:
             cookie = request.cookies.get('rh_authorize', '')
         p = self.store.ticket_params(ticket)
         if not ticket or not p:
+            log.warning('OAuth ticket missing ticket=%s cookie=%s db=%s pid=%s', digest(ticket)[:12] if ticket else '-', bool(cookie), self.store.path, os.getpid())
             return error('authorization_expired_or_invalid', 403,
                          '授权页面已过期或已使用，请返回 ChatGPT 重新发起连接，并在 10 分钟内完成登录。')
         if not cookie or not hmac.compare_digest(ticket.encode(), cookie.encode()):
+            log.warning('OAuth ticket cookie mismatch ticket=%s db=%s pid=%s', digest(ticket)[:12], self.store.path, os.getpid())
             return error('authorization_expired_or_invalid', 403,
                          '浏览器未携带此授权页面的有效 Cookie。请允许本站 Cookie，返回 ChatGPT 重新连接，并在同一浏览器完成登录。')
         if p['redirect_uri'] not in self.settings.redirect_uris:
@@ -173,6 +179,7 @@ class OAuth:
         try:
             code, p = self.store.authorize(ticket, user['id'])
         except ValueError:
+            log.warning('OAuth ticket consumed or account disabled ticket=%s db=%s pid=%s', digest(ticket)[:12], self.store.path, os.getpid())
             return error('authorization_expired_or_invalid', 403,
                          '授权请求已失效或账号已停用，请返回 ChatGPT 重新连接；如仍失败，请联系管理员。')
         response = self.redirect(p, code=code)
