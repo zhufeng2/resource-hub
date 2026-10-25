@@ -150,6 +150,7 @@ class OAuth:
         # Allow an already-open login page to finish after an application update.
         if not cookie:
             cookie = request.cookies.get('rh_authorize', '')
+        log.info('OAuth login submitted ticket=%s cookie=%s action=%s db=%s pid=%s', digest(ticket)[:12] if ticket else '-', bool(cookie), form.get('action'), self.store.path, os.getpid())
         p = self.store.ticket_params(ticket)
         if not ticket or not p:
             log.warning('OAuth ticket missing ticket=%s cookie=%s db=%s pid=%s', digest(ticket)[:12] if ticket else '-', bool(cookie), self.store.path, os.getpid())
@@ -184,6 +185,7 @@ class OAuth:
                          '授权请求已失效或账号已停用，请返回 ChatGPT 重新连接；如仍失败，请联系管理员。')
         response = self.redirect(p, code=code)
         response.delete_cookie(authorization_cookie(ticket), path='/oauth/authorize')
+        log.info('OAuth login allowed ticket=%s user_id=%s db=%s pid=%s', digest(ticket)[:12], user['id'], self.store.path, os.getpid())
         return response
 
     async def token(self, request):
