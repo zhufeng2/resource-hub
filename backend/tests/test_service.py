@@ -69,9 +69,11 @@ class ServiceTests(unittest.TestCase):
                   'code_challenge_method': 'S256', 'code_challenge': pkce(verifier)}
         response = self.client.get('/oauth/authorize', params=params)
         self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.headers['referrer-policy'], 'same-origin')
         ticket = self.client.cookies['rh_authorize']
         response = self.client.post('/oauth/authorize', data={
-            'ticket': ticket, 'username': username, 'password': PASSWORD, 'action': 'allow'}, follow_redirects=False)
+            'ticket': ticket, 'username': username, 'password': PASSWORD, 'action': 'allow'},
+            headers={'Origin': BASE}, follow_redirects=False)
         self.assertEqual(response.status_code, 303, response.text)
         location = parse_qs(urlsplit(response.headers['location']).query)
         self.assertEqual(location['state'], ['original-state'])
@@ -166,6 +168,7 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.client.post('/oauth/authorize', data=form).status_code, 403)
         form['ticket'] = ticket
         self.assertEqual(self.client.post('/oauth/authorize', data=form, headers={'Origin': 'https://attacker.example'}).status_code, 403)
+        self.assertEqual(self.client.post('/oauth/authorize', data=form, headers={'Origin': 'null'}).status_code, 403)
         response = self.client.post('/oauth/authorize', data=form, follow_redirects=False)
         code = parse_qs(urlsplit(response.headers['location']).query)['code'][0]
         exchange = {'grant_type': 'authorization_code', 'client_id': client_id, 'redirect_uri': CALLBACK,

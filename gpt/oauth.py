@@ -39,7 +39,8 @@ def login_page(ticket, message='', status=200):
 <button class="primary full" name="action" value="allow">登录并授权搜索 ↗</button>
 <button class="text-button full" name="action" value="deny" formnovalidate>取消</button></form>
 <p class="login-help">需要账号或忘记密码？请联系管理员。</p></div></section></main></body></html>''',
-        status_code=status, headers={**NO_STORE, 'Referrer-Policy': 'no-referrer',
+        # no-referrer makes browser form POSTs send Origin: null, failing our origin check.
+        status_code=status, headers={**NO_STORE, 'Referrer-Policy': 'same-origin',
             'Content-Security-Policy': "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
             'X-Frame-Options': 'DENY', 'X-Content-Type-Options': 'nosniff'})
     return response
