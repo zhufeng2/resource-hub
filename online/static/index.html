@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="搜索网盘资源，管理搜索偏好与账号。">
+  <title>Resource Hub · 资源搜索</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳至内容</a>
+  <header class="header">
+    <a class="brand" href="#search" aria-label="Resource Hub 首页"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>Resource Hub<span class="brand-caption">资源检索</span></span></a>
+    <nav id="navigation" aria-label="主导航" hidden>
+      <a href="#search" data-nav="search">搜索</a><a href="#settings" data-nav="settings">配置</a><a href="#account" data-nav="account">账号</a>
+    </nav>
+    <div class="header-account" id="header-account" hidden><span class="quota-small" id="quota-small"></span><a class="avatar" href="#account" id="avatar" aria-label="我的账号"></a></div>
+  </header>
+  <main id="main" tabindex="-1">
+    <section id="login-view" class="login-view" hidden>
+      <div class="login-card"><span class="eyebrow">RESOURCE HUB</span><h1>欢迎回来</h1><p class="muted">登录账号，继续搜索。</p>
+        <form id="login-form"><label>账号<input name="username" autocomplete="username" maxlength="64" required placeholder="输入账号"></label><label>密码<input name="password" type="password" autocomplete="current-password" maxlength="256" required placeholder="输入密码"></label><p id="login-error" class="form-error" role="alert"></p><button class="primary full" type="submit">登录 <span aria-hidden="true">↗</span></button></form>
+        <p class="login-help">需要账号或忘记密码？请联系管理员。</p>
+      </div><div class="login-note"><span class="mini-line"></span>搜索与管理，井然有序。</div>
+    </section>
+    <div id="workspace" hidden>
+      <section id="search-page" class="page" data-page="search">
+        <div class="page-heading"><div><span class="eyebrow">FIND YOUR RESOURCES</span><h1>搜索资源<span class="heading-dot">.</span></h1><p class="muted">输入名称或关键词，找到需要的内容。</p></div><span class="heading-index">01 / SEARCH</span></div>
+        <form id="search-form" class="search-box"><span class="search-symbol" aria-hidden="true"></span><label class="sr-only" for="query">搜索关键词</label><input id="query" name="query" type="search" maxlength="120" required autocomplete="off" placeholder="搜索电影、书籍、课程或其他资源…"><kbd aria-hidden="true">/</kbd><button type="submit" class="primary" id="search-button">搜索 <span aria-hidden="true">↗</span></button></form>
+        <div class="search-options"><div class="scope-chips" id="search-clouds" aria-label="搜索网盘"></div><button class="text-button" id="advanced-toggle" type="button" aria-expanded="false">精确筛选 <span aria-hidden="true">＋</span></button></div>
+        <div id="advanced-filters" class="advanced-filters" hidden><label>包含关键词<input id="include-words" placeholder="用空格分隔，匹配任意一个"></label><label>排除关键词<input id="exclude-words" placeholder="用空格分隔"></label><span class="muted">筛选当前结果，不消耗次数。</span></div>
+        <div class="search-layout">
+          <div class="results-area" aria-live="polite" aria-busy="false" id="results-area">
+            <div id="result-toolbar" class="result-toolbar" hidden><div><strong id="result-title">搜索结果</strong><span id="result-count" class="muted"></span></div><div class="toolbar-actions"><label class="sr-only" for="sort-results">结果排序</label><select id="sort-results"><option value="relevance">默认排序</option><option value="newest">最新发布</option></select><button class="icon-button" id="view-toggle" title="切换视图" aria-label="切换视图">▦</button><button class="text-button" id="refresh-results" title="重新搜索会使用 1 次额度">刷新 ↻</button><button class="text-button" id="export-button">导出 ↓</button></div></div>
+            <div id="empty-state" class="empty-state"><div class="empty-illustration" aria-hidden="true"><div class="paper paper-back"></div><div class="paper paper-front"><span></span><span></span><span></span></div><div class="paper-search"></div></div><h2>从一个关键词开始</h2><p>搜索结果会显示在这里。</p><span class="empty-tip">按 <kbd>/</kbd> 快速开始搜索</span></div>
+            <div id="search-status" class="status-box" role="status" hidden></div>
+            <div id="results" class="result-list"></div>
+            <div id="pagination" class="pagination" hidden></div>
+            <p id="result-note" class="result-note" hidden>分享链接及文件内容以实际访问结果为准。</p>
+          </div>
+          <aside class="search-aside"><section class="aside-section"><div class="section-title"><h2>最近搜索</h2><span class="small-label">24H</span></div><div id="recent-searches" class="recent-list"><p class="muted small">暂无搜索记录</p></div></section><section class="quota-panel"><span class="eyebrow">今日额度</span><div class="quota-number"><strong id="quota-remaining">—</strong><span id="quota-total">/ — 次</span></div><div id="quota-meter" class="quota-meter"></div><p id="quota-reset">北京时间零点重置</p><a href="#account" class="inline-link">查看账号 <span>↗</span></a></section></aside>
+        </div>
+      </section>
+      <section id="settings-page" class="page" data-page="settings" hidden>
+        <div class="page-heading"><div><span class="eyebrow">MAKE IT YOURS</span><h1>搜索配置<span class="heading-dot">.</span></h1><p class="muted">按习惯设置搜索范围与结果展示。</p></div><button id="save-settings" class="primary">保存配置 <span>↗</span></button></div>
+        <div class="settings-layout"><aside class="settings-index"><a href="#settings" data-scroll="config-clouds">01 网盘类型</a><a href="#settings" data-scroll="config-sources">02 搜索来源</a><a href="#settings" data-scroll="config-display">03 展示偏好</a><button class="text-button" id="reset-settings">恢复默认配置</button></aside>
+          <div class="settings-sections"><section class="panel" id="config-clouds"><div class="panel-heading"><div><h2>网盘类型</h2><p>选择默认搜索的网盘。</p></div><button class="text-button" id="select-all-clouds">全部选择</button></div><div class="choice-grid" id="settings-clouds"></div></section>
+          <section class="panel" id="config-sources"><div class="panel-heading"><div><h2>搜索来源</h2><p>选择插件与频道，留空时使用服务默认配置。</p></div><button class="text-button" id="reload-catalog">刷新列表 ↻</button></div><label class="field-label" for="source-mode">搜索范围</label><select id="source-mode"><option value="all">全部来源</option><option value="plugin">仅搜索插件</option><option value="tg">仅搜索 Telegram 频道</option></select><div class="source-heading"><h3>搜索插件</h3><span id="plugin-count" class="small-label"></span></div><div class="source-choices" id="plugin-choices"></div><label class="field-label" for="plugin-input">插件名称</label><textarea id="plugin-input" rows="2" placeholder="多个插件用逗号或换行分隔"></textarea><div class="source-heading"><h3>Telegram 频道</h3><span id="channel-count" class="small-label"></span></div><div class="source-choices" id="channel-choices"></div><label class="field-label" for="channel-input">频道名称</label><textarea id="channel-input" rows="2" placeholder="多个频道用逗号或换行分隔"></textarea><p id="catalog-status" class="field-help"></p></section>
+          <section class="panel" id="config-display"><div class="panel-heading"><div><h2>展示偏好</h2><p>设置阅读方式与链接检测。</p></div></div><div class="form-grid"><label>每页结果<select id="page-size"><option value="10">10 条</option><option value="20">20 条</option><option value="50">50 条</option></select></label><label>默认视图<select id="default-view"><option value="list">列表</option><option value="grid">卡片</option></select></label><label>结果排序<select id="default-sort"><option value="relevance">默认排序</option><option value="newest">最新发布</option></select></label><label>页面外观<select id="theme"><option value="light">浅色</option><option value="dark">深色</option><option value="system">跟随系统</option></select></label></div><label class="toggle-row"><span><strong>自动检测链接</strong><small>检测当前页最多 20 条分享链接。</small></span><input type="checkbox" id="auto-check" role="switch"></label><label class="toggle-row"><span><strong>隐藏失效链接</strong><small>隐藏检测结果明确失效的分享。</small></span><input type="checkbox" id="hide-invalid" role="switch"></label><div class="panel-bottom"><button class="text-button" id="export-config">导出配置 ↓</button><label class="text-button file-label">导入配置 ↑<input type="file" id="import-config" accept="application/json,.json" class="sr-only"></label></div></section></div></div>
+      </section>
+      <section id="account-page" class="page" data-page="account" hidden>
+        <div class="page-heading"><div><span class="eyebrow">YOUR WORKSPACE</span><h1>账号中心<span class="heading-dot">.</span></h1><p class="muted">管理账号、安全设置与搜索源连接。</p></div><span class="heading-index">03 / ACCOUNT</span></div>
+        <div class="account-tabs" role="tablist" aria-label="账号分类"><button data-account-tab="profile" role="tab" aria-selected="true">我的账号</button><button data-account-tab="sources" role="tab" aria-selected="false">搜索源账号</button><button data-account-tab="users" id="users-tab" role="tab" aria-selected="false" hidden>用户管理</button></div>
+        <div id="profile-panel" data-account-panel="profile"><div class="profile-layout"><section class="panel profile-card"><div class="profile-avatar" id="profile-avatar"></div><h2 id="profile-name"></h2><span class="pill" id="profile-role"></span><div class="profile-stats"><div><strong id="profile-used">—</strong><span>今日已用</span></div><div><strong id="profile-remaining">—</strong><span>剩余次数</span></div><div><strong id="profile-limit">—</strong><span>每日额度</span></div></div><button class="secondary full" id="logout-button">退出登录</button></section><div><section class="panel"><div class="panel-heading"><div><h2>修改密码</h2><p>使用至少 12 个字符的密码。</p></div></div><form id="password-form"><label>当前密码<input type="password" name="current_password" autocomplete="current-password" maxlength="256" required></label><div class="form-grid"><label>新密码<input type="password" name="password" autocomplete="new-password" minlength="12" maxlength="256" required></label><label>确认新密码<input type="password" name="confirm" autocomplete="new-password" minlength="12" maxlength="256" required></label></div><button class="primary" type="submit">更新密码</button></form></section><section class="panel"><div class="panel-heading"><div><h2>ChatGPT 连接</h2><p>在 ChatGPT 中添加服务，使用同一账号登录。</p></div></div><div class="copy-field"><code id="mcp-url"></code><button class="text-button" id="copy-mcp">复制</button></div><button class="text-button danger-text" id="revoke-connections">撤销 ChatGPT 授权</button></section></div></div></div>
+        <div data-account-panel="sources" hidden><div class="subheading"><div><h2>搜索源账号</h2><p class="muted">连接账号，使用对应搜索源。</p></div><button class="primary" id="add-binding">添加账号 ＋</button></div><div id="bindings" class="binding-grid"></div></div>
+        <div data-account-panel="users" hidden><div class="subheading"><div><h2>用户管理</h2><p class="muted">管理访问权限和每日搜索额度。</p></div><button class="primary" id="add-user">创建用户 ＋</button></div><div class="table-wrap panel"><table><thead><tr><th>账号</th><th>角色</th><th>每日额度</th><th>状态</th><th><span class="sr-only">操作</span></th></tr></thead><tbody id="users-table"></tbody></table></div></div>
+      </section>
+    </div>
+  </main>
+  <footer class="footer"><span>Resource Hub</span><span id="footer-note">资源搜索与管理</span><span>SEARCH, SIMPLY.</span></footer>
+  <dialog id="modal"><div class="modal-header"><h2 id="modal-title"></h2><button class="icon-button" id="close-modal" aria-label="关闭">×</button></div><div id="modal-body"></div></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

@@ -1,0 +1,299 @@
+"""Offline security and quota tests; no real PanSou login or network search."""
+import concurrent.futures
+import asyncio
+import json
+import logging
+import os
+from pathlib import Path
+import tempfile
+import time
+import unittest
+from unittest.mock import AsyncMock, patch
+from urllib.parse import parse_qs, urlsplit
+
+from starlette.testclient import TestClient
+
+from online.app import create_app
+from online.backend import SearchFailure, search_pansou
+from online.config import Settings
+from online.store import Store, day_key, pkce
+
+logging.getLogger('httpx').setLevel(logging.WARNING)
+
+BASE = 'https://search.example.com'
+CALLBACK = 'https://chatgpt.com/connector_platform_oauth_redirect'
+PASSWORD = 'test-password-for-online'
+
+
+class ServiceTests(unittest.TestCase):
+    def setUp(self):
+        root = Path(__file__).resolve().parents[2] / '.cache' / 'online-tests'
+        root.mkdir(parents=True, exist_ok=True)
+        self.temp = tempfile.TemporaryDirectory(dir=root)
+        self.settings = Settings(BASE, Path(self.temp.name) / 'service.sqlite3', (CALLBACK,))
+        self.calls = []
+
+        async def backend(query, timeout):
+            self.calls.append(query)
+            if query == 'fail':
+                raise SearchFailure('模拟故障，本次不扣额度。')
+            return {'query': query, 'results': [{'title': str(i), 'url': 'https://pan.quark.cn/s/test'} for i in range(35)]}
+
+        self.app = create_app(self.settings, backend)
+        self.store = self.app.state.store
+        self.store.add_user('alice', PASSWORD, 5)
+        self.store.add_user('bob', PASSWORD, 5)
+        self.client = TestClient(self.app, base_url=BASE)
+        self.client.__enter__()
+        self.addCleanup(self.cleanup_temp)
+        self.addCleanup(self.client.__exit__, None, None, None)
+
+    def cleanup_temp(self):
+        # Windows scanners can briefly hold an otherwise closed SQLite temp directory.
+        for delay in (0, 0.05, 0.1, 0.2, 0.4):
+            if delay:
+                time.sleep(delay)
+            try:
+                self.temp.cleanup()
+                return
+            except PermissionError:
+                pass
+        self.temp.cleanup()
+
+    def login(self, username='alice', verifier='x' * 43):
+        registration = self.client.post('/oauth/register', json={'redirect_uris': [CALLBACK], 'token_endpoint_auth_method': 'none'})
+        self.assertEqual(registration.status_code, 201, registration.text)
+        client_id = registration.json()['client_id']
+        params = {'client_id': client_id, 'redirect_uri': CALLBACK, 'response_type': 'code',
+                  'scope': 'search', 'state': 'original-state', 'resource': self.settings.resource,
+                  'code_challenge_method': 'S256', 'code_challenge': pkce(verifier)}
+        response = self.client.get('/oauth/authorize', params=params)
+        self.assertEqual(response.status_code, 200, response.text)
+        ticket = self.client.cookies['rh_authorize']
+        response = self.client.post('/oauth/authorize', data={
+            'ticket': ticket, 'username': username, 'password': PASSWORD, 'action': 'allow'}, follow_redirects=False)
+        self.assertEqual(response.status_code, 303, response.text)
+        location = parse_qs(urlsplit(response.headers['location']).query)
+        self.assertEqual(location['state'], ['original-state'])
+        self.assertEqual(location['iss'], [BASE])
+        exchange = {'grant_type': 'authorization_code', 'client_id': client_id,
+                    'redirect_uri': CALLBACK, 'resource': self.settings.resource,
+                    'code': location['code'][0], 'code_verifier': verifier}
+        token = self.client.post('/oauth/token', data=exchange)
+        self.assertEqual(token.status_code, 200, token.text)
+        return token.json(), client_id, exchange
+
+    def rpc(self, token, method, params=None):
+        response = self.client.post('/mcp', json={
+            'jsonrpc': '2.0', 'id': 1, 'method': method, **({'params': params} if params is not None else {})},
+            headers={'Authorization': 'Bearer ' + token, 'Accept': 'application/json, text/event-stream',
+                     'MCP-Protocol-Version': '2025-03-26'})
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def tool(self, token, name, arguments=None):
+        response = self.rpc(token, 'tools/call', {'name': name, 'arguments': arguments or {}})
+        self.assertNotIn('error', response, response)
+        result = response['result']
+        self.assertFalse(result.get('isError'), result)
+        return result.get('structuredContent') or json.loads(result['content'][0]['text'])
+
+    def test_metadata_and_unauthenticated_transport(self):
+        response = self.client.post('/mcp', json={})
+        self.assertEqual(response.status_code, 401)
+        self.assertIn('resource_metadata=', response.headers['www-authenticate'])
+        metadata = self.client.get('/.well-known/oauth-authorization-server').json()
+        self.assertEqual(metadata['code_challenge_methods_supported'], ['S256'])
+        self.assertEqual(self.client.get('/.well-known/oauth-protected-resource/mcp').json()['resource'], self.settings.resource)
+        self.assertEqual(self.client.post('/oauth/register', json={'redirect_uris': ['https://attacker.example/callback']}).status_code, 400)
+        self.assertEqual(self.client.post('/oauth/register', json={
+            'redirect_uris': [CALLBACK], 'grant_types': [{}]}).status_code, 400)
+
+    def test_oauth_mcp_pagination_isolation_and_quota(self):
+        tokens, _, exchange = self.login()
+        token = tokens['access_token']
+        self.assertEqual(self.client.post('/oauth/token', data=exchange).status_code, 400)
+        init = self.rpc(token, 'initialize', {'protocolVersion': '2025-03-26', 'capabilities': {},
+                                            'clientInfo': {'name': 'test', 'version': '1'}})
+        self.assertIn('tools', init['result']['capabilities'])
+        tools = self.rpc(token, 'tools/list')['result']['tools']
+        self.assertEqual({t['name'] for t in tools}, {'search_resources', 'get_search_results', 'get_quota'})
+        first = self.tool(token, 'search_resources', {'query': 'test', 'request_id': 'same-request'})
+        self.assertEqual(first['quota']['used'], 1)
+        retry = self.tool(token, 'search_resources', {'query': 'test', 'request_id': 'same-request'})
+        self.assertEqual(first['search_id'], retry['search_id'])
+        self.assertEqual(self.calls, ['test'])
+        page = self.tool(token, 'get_search_results', {'search_id': first['search_id'], 'offset': 20})
+        self.assertEqual(page['returned_count'], 15)
+        self.assertEqual(page['quota']['used'], 1)
+        bob, _, _ = self.login('bob')
+        private = self.tool(bob['access_token'], 'get_search_results', {'search_id': first['search_id']})
+        self.assertEqual(private['error'], 'search_expired_or_not_found')
+        failed = self.tool(token, 'search_resources', {'query': 'fail'})
+        self.assertEqual(failed['error'], 'search_failed')
+        self.assertEqual(self.tool(token, 'get_quota')['used'], 1)
+        for i in range(4):
+            self.tool(token, 'search_resources', {'query': 'test', 'request_id': 'new-' + str(i)})
+        exhausted = self.tool(token, 'search_resources', {'query': 'sixth'})
+        self.assertEqual(exhausted['error'], 'daily_limit_reached')
+        self.assertEqual(exhausted['quota']['remaining'], 0)
+
+    def test_refresh_revoke_and_disable(self):
+        tokens, client_id, _ = self.login()
+        params = {'grant_type': 'refresh_token', 'refresh_token': tokens['refresh_token'],
+                  'client_id': client_id, 'resource': self.settings.resource}
+        rotated = self.client.post('/oauth/token', data=params)
+        self.assertEqual(rotated.status_code, 200)
+        self.assertEqual(self.client.post('/oauth/token', data=params).status_code, 400)
+        self.assertIsNone(self.store.authenticate(tokens['access_token'], self.settings.resource))
+        token = rotated.json()['access_token']
+        self.store.change_user('alice', enabled=False)
+        self.assertEqual(self.client.post('/mcp', json={}, headers={'Authorization': 'Bearer ' + token}).status_code, 401)
+        self.store.change_user('alice', enabled=True)
+        self.assertIsNone(self.store.authenticate(token, self.settings.resource))
+        bob, client_id, _ = self.login('bob')
+        self.client.post('/oauth/revoke', data={'token': bob['access_token'], 'client_id': client_id})
+        self.assertIsNone(self.store.authenticate(bob['access_token'], self.settings.resource))
+
+    def test_pkce_audience_redirect_csrf_and_password_reset(self):
+        tokens, client_id, _ = self.login()
+        # Use a fresh authorization code to exercise rejected exchanges before successful redemption.
+        p = {'client_id': client_id, 'redirect_uri': CALLBACK, 'response_type': 'code',
+             'resource': self.settings.resource, 'code_challenge_method': 'S256', 'code_challenge': pkce('z' * 43)}
+        self.client.get('/oauth/authorize', params=p)
+        ticket = self.client.cookies['rh_authorize']
+        form = {'ticket': 'wrong', 'username': 'alice', 'password': PASSWORD, 'action': 'allow'}
+        self.assertEqual(self.client.post('/oauth/authorize', data=form).status_code, 403)
+        form['ticket'] = ticket
+        self.assertEqual(self.client.post('/oauth/authorize', data=form, headers={'Origin': 'https://attacker.example'}).status_code, 403)
+        response = self.client.post('/oauth/authorize', data=form, follow_redirects=False)
+        code = parse_qs(urlsplit(response.headers['location']).query)['code'][0]
+        exchange = {'grant_type': 'authorization_code', 'client_id': client_id, 'redirect_uri': CALLBACK,
+                    'resource': self.settings.resource, 'code': code, 'code_verifier': 'w' * 43}
+        self.assertEqual(self.client.post('/oauth/token', data=exchange).status_code, 400)
+        exchange['code_verifier'] = 'z' * 43
+        exchange['resource'] = 'https://attacker.example/mcp'
+        self.assertEqual(self.client.post('/oauth/token', data=exchange).json()['error'], 'invalid_target')
+        exchange['resource'] = self.settings.resource
+        exchange['redirect_uri'] = 'https://attacker.example'
+        self.assertEqual(self.client.post('/oauth/token', data=exchange).status_code, 400)
+        exchange['redirect_uri'] = CALLBACK
+        self.assertEqual(self.client.post('/oauth/token', data=exchange).status_code, 200)
+        self.store.change_user('alice', password='new-password-for-test')
+        self.assertIsNone(self.store.authenticate(tokens['access_token'], self.settings.resource))
+
+    def test_concurrent_reservations_restart_and_day_boundary(self):
+        user = self.store.login('alice', PASSWORD)
+
+        def attempt(i):
+            try:
+                return self.store.reserve(user['id'], 'parallel-' + str(i), 'test')[0]
+            except ValueError:
+                return None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+            rows = list(pool.map(attempt, range(12)))
+        rows = [r for r in rows if r]
+        self.assertEqual(len(rows), 5)
+        self.assertEqual(self.store.quota(user['id'])['remaining'], 0)
+        self.store.finish(rows[0]['id'], {'results': []})
+        self.store.fail(rows[1]['id'])
+        reopened = Store(self.settings.database)
+        self.assertEqual(reopened.quota(user['id'])['used'], 1)
+        self.assertEqual(reopened.quota(user['id'])['remaining'], 1)
+        self.assertEqual(day_key(0), '1970-01-01')
+        # 16:00 UTC is midnight in Shanghai, independent of the server timezone.
+        self.assertNotEqual(day_key(57599), day_key(57600))
+        with patch('online.store.time.time', return_value=time.time() + 86400):
+            self.assertEqual(reopened.quota(user['id'])['remaining'], 5)
+
+    def test_limits_expiry_invalid_input_and_body_limit(self):
+        tokens, _, _ = self.login()
+        token = tokens['access_token']
+        self.assertEqual(self.tool(token, 'search_resources', {'query': ' '})['error'], 'invalid_query')
+        first = self.tool(token, 'search_resources', {'query': 'test', 'request_id': 'id1'})
+        self.assertEqual(self.tool(token, 'search_resources', {'query': 'other', 'request_id': 'id1'})['error'], 'request_id_conflict')
+        response = self.client.post('/oauth/token', content=b'x' * 17000)
+        self.assertEqual(response.status_code, 413)
+        with self.store.connection(True) as db:
+            db.execute('UPDATE searches SET created=?', (time.time() - 86401,))
+        self.assertEqual(self.tool(token, 'get_search_results', {'search_id': first['search_id']})['error'], 'search_expired_or_not_found')
+        self.store.cleanup()
+        self.assertTrue(self.store.rate('test-limit', 1, 60))
+        self.assertFalse(self.store.rate('test-limit', 1, 60))
+
+    def test_failed_retry_zero_results_and_stale_reservation(self):
+        user = self.store.login('alice', PASSWORD)
+        old, _ = self.store.reserve(user['id'], 'retry-after-crash', 'test')
+        with self.store.connection(True) as db:
+            db.execute('UPDATE searches SET created=? WHERE id=?', (time.time() - 181, old['id']))
+        new, owned = self.store.reserve(user['id'], 'retry-after-crash', 'test')
+        self.assertTrue(owned)
+        self.assertNotEqual(old['id'], new['id'])
+        self.store.finish(old['id'], {'results': []})
+        self.assertEqual(self.store.quota(user['id'])['used'], 0)
+        self.store.fail(new['id'])
+        retry, _ = self.store.reserve(user['id'], 'retry-after-crash', 'test')
+        self.store.finish(retry['id'], {'results': []})
+        self.assertEqual(self.store.quota(user['id'])['used'], 1)
+        with self.store.connection(True) as db:
+            db.execute('UPDATE searches SET created=? WHERE id=?', (time.time() - 32 * 86400, retry['id']))
+        self.store.cleanup()
+        self.assertIsNone(self.store.search(user['id'], retry['id']))
+
+    def test_deny_and_transport_validation(self):
+        _, client_id, _ = self.login()
+        params = {'client_id': client_id, 'redirect_uri': CALLBACK, 'response_type': 'code',
+                  'resource': self.settings.resource, 'code_challenge_method': 'S256', 'code_challenge': pkce('a' * 43),
+                  'state': 'deny-state'}
+        self.client.get('/oauth/authorize', params=params)
+        response = self.client.post('/oauth/authorize', data={
+            'ticket': self.client.cookies['rh_authorize'], 'action': 'deny'}, follow_redirects=False)
+        callback = parse_qs(urlsplit(response.headers['location']).query)
+        self.assertEqual(callback['error'], ['access_denied'])
+        self.assertEqual(callback['iss'], [BASE])
+        self.assertEqual(callback['state'], ['deny-state'])
+        self.assertEqual(self.client.get('/healthz', headers={'Host': 'attacker.example'}).status_code, 400)
+        params['code_challenge_method'] = 'plain'
+        response = self.client.get('/oauth/authorize', params=params, follow_redirects=False)
+        self.assertEqual(parse_qs(urlsplit(response.headers['location']).query)['error'], ['invalid_request'])
+
+
+class BackendTests(unittest.IsolatedAsyncioTestCase):
+    async def test_subprocess_is_search_only_and_treats_query_as_data(self):
+        process = AsyncMock()
+        process.returncode = 0
+        process.communicate.return_value = (json.dumps({'results': [
+            {'title': 'safe', 'url': 'https://pan.quark.cn/s/example'},
+            {'title': 'bad', 'url': 'javascript:alert(1)'}]}).encode(), b'')
+        with patch.dict(os.environ, {'PANSOU_API_TOKEN': 'test-token'}), patch(
+                'online.backend.asyncio.create_subprocess_exec', return_value=process) as spawn:
+            result = await search_pansou('--setup', 1)
+        args = spawn.call_args.args
+        self.assertEqual(args[-2:], ('--', '--setup'))
+        self.assertNotIn('test-token', args)
+        self.assertEqual(len(result['results']), 1)
+        self.assertIn('未核验', result['verification'])
+
+    async def test_timeout_kills_worker_and_missing_credentials_do_not_spawn(self):
+        process = AsyncMock()
+        process.returncode = None
+        # kill() is synchronous on asyncio subprocess handles.
+        from unittest.mock import Mock
+        process.kill = Mock()
+        process.communicate.side_effect = asyncio.TimeoutError
+        with patch.dict(os.environ, {'PANSOU_API_TOKEN': 'test-token'}), patch(
+                'online.backend.asyncio.create_subprocess_exec', return_value=process):
+            with self.assertRaises(SearchFailure):
+                await search_pansou('test', 1)
+        process.kill.assert_called_once()
+        process.wait.assert_awaited_once()
+        with patch.dict(os.environ, {}, clear=True), patch(
+                'online.backend.asyncio.create_subprocess_exec') as spawn:
+            with self.assertRaises(SearchFailure):
+                await search_pansou('test', 1)
+            spawn.assert_not_called()
+
+
+if __name__ == '__main__':
+    unittest.main()

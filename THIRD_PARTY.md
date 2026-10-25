@@ -14,4 +14,8 @@
 
 ## PanSou API
 
-`resource-hub` 调用外部搜索服务，默认地址为 `https://my-pansou-api.onrender.com`，可由用户配置其他兼容服务。本仓库不包含该服务端程序、共享凭据或资源文件。
+`resource-hub` 调用外部搜索服务，默认地址为 `https://pan.sysscitech.com`，可配置其他兼容服务。
+
+## PanSou Web 接口兼容
+
+网页的搜索配置与搜索源账号流程参考 [fish2018/pansou-web](https://github.com/fish2018/pansou-web) 的接口定义。页面布局、样式与交互在本项目中独立实现。

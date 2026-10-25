@@ -1,0 +1,26 @@
+# Optional: run the PanSou API in the same private Docker network.
+services:
+  app:
+    environment:
+      PANSOU_BASE_URL: http://pansou:8888
+      PANSOU_ALLOW_HTTP: "true"
+      PANSOU_USERNAME: ${PANSOU_USERNAME:-admin}
+      PANSOU_PASSWORD: ${PANSOU_PASSWORD:?请配置 PanSou 后端密码}
+      PANSOU_API_TOKEN: ""
+    depends_on:
+      - pansou
+  pansou:
+    image: ghcr.io/fish2018/pansou:latest
+    environment:
+      AUTH_ENABLED: "true"
+      AUTH_USERS: ${PANSOU_USERNAME:-admin}:${PANSOU_PASSWORD:?请配置 PanSou 后端密码}
+      AUTH_JWT_SECRET: ${PANSOU_JWT_SECRET:?请配置固定的强随机 JWT 密钥}
+      ENABLED_PLUGINS: ${PANSOU_PLUGINS:-pansearch,qupanshe,qqpd,gying,panlian,weibo,woniu}
+    volumes:
+      - pansou_data:/app/data
+    expose:
+      - "8888"
+    restart: unless-stopped
+
+volumes:
+  pansou_data:

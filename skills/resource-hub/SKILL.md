@@ -78,7 +78,7 @@ python3 "<skill>/scripts/resource.py" inspect 'https://pan.quark.cn/s/分享ID' 
 
 `check` 用 `--password` 传提取码。inspect 默认 8 次列表请求、300 个文件、3 层子目录。不要输出分享访问令牌。
 
-服务默认 `https://my-pansou-api.onrender.com`；账号读用户主目录下 `.config/pansou/credentials.json`（脚本自行定位，各系统位置不同，不要手写）或成对的环境变量 `PANSOU_USERNAME`/`PANSOU_PASSWORD`，`PANSOU_BASE_URL` 可覆盖。缺凭据让用户自己在 `<skill>` 目录运行 `scripts/resource.py setup`，不在聊天里索取密码。setup 保留已有服务地址等配置并清除当前账号旧 token；保存不代表登录成功。运行 `scripts/resource.py auth-test` 强制重新登录并检查搜索权限，只报告状态，不输出凭据。固定 API token 模式仅验证该 token，不能声称验证了用户名密码。
+服务默认 `https://pan.sysscitech.com`；账号读用户主目录下 `.config/pansou/credentials.json`（脚本自行定位，各系统位置不同，不要手写）或成对的环境变量 `PANSOU_USERNAME`/`PANSOU_PASSWORD`，`PANSOU_BASE_URL` 可覆盖。缺凭据让用户自己在 `<skill>` 目录运行 `scripts/resource.py setup`，不在聊天里索取密码。setup 保留已有服务地址等配置并清除当前账号旧 token；保存不代表登录成功。运行 `scripts/resource.py auth-test` 强制重新登录并检查搜索权限，只报告状态，不输出凭据。固定 API token 模式仅验证该 token，不能声称验证了用户名密码。
 
 改用需要 `Authorization` 头的服务（如 `ps.252035.xyz`）：地址写进配置的 `base_url` 或环境变量；token 取 `STATIC_TOKEN`、`PANSOU_API_TOKEN` 或配置里的 `api_token`，有 token 就跳过账号登录，401 直接报错不重试。搜索请求只发 `kw`、`cloud_types`，响应按 `merged_by_type` 解析。
 

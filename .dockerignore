@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+**/__pycache__
+**/*.pyc
+**/*.sqlite*
+**/*.db
+.venv
+.cache
+online/data
+online/.env
+skill-backups
+**/credentials.json
+**/config.json
+node_modules

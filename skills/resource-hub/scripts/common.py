@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-DEFAULT_URL = 'https://my-pansou-api.onrender.com'
+DEFAULT_URL = 'https://pan.sysscitech.com'
 CONFIG = Path.home() / '.config/pansou/credentials.json'
 CACHE_ROOT = Path(os.getenv('RESOURCE_HUB_CACHE', str(Path.home() / '.cache/resource-hub')))
 
