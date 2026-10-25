@@ -300,6 +300,39 @@ class Store:
                 (digest(token), time.time(), resource)).fetchone()
             return dict(row) if row else None
 
+    def issue_mcp_token(self, username, resource, days=365):
+        """Issue a long-lived Bearer token for MCP clients that cannot do OAuth."""
+        if not 1 <= days <= 3650:
+            raise ValueError('有效期需为 1–3650 天')
+        raw = 'rh_mcp_' + secrets.token_urlsafe(32)
+        with self.connection(True) as db:
+            row = db.execute('SELECT id FROM users WHERE username=? AND enabled=1', (username,)).fetchone()
+            if not row:
+                raise ValueError('账号不存在或已停用')
+            # One active CLI token per account; reissuing rotates the old one.
+            db.execute("DELETE FROM tokens WHERE user_id=? AND client_id='dsh-cli'", (row['id'],))
+            db.execute('INSERT INTO tokens VALUES(?,?,?,?,?,?,?)', (
+                digest(raw), 'access', row['id'], 'dsh-cli', resource,
+                secrets.token_urlsafe(24), time.time() + days * 86400))
+        return raw
+
+    def revoke_mcp_token(self, username):
+        with self.connection(True) as db:
+            row = db.execute('SELECT id FROM users WHERE username=?', (username,)).fetchone()
+            if not row:
+                raise ValueError('账号不存在')
+            return db.execute("DELETE FROM tokens WHERE user_id=? AND client_id='dsh-cli'",
+                              (row['id'],)).rowcount
+
+    def mcp_tokens(self):
+        with self.connection() as db:
+            rows = db.execute('''SELECT u.username, t.expires FROM tokens t
+                JOIN users u ON u.id=t.user_id WHERE t.client_id='dsh-cli' ORDER BY u.username''').fetchall()
+            return [{'username': row['username'],
+                     'expires': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(row['expires']))}
+                    for row in rows]
+
+
     def revoke(self, token, client_id):
         with self.connection(True) as db:
             row = db.execute('SELECT family FROM tokens WHERE hash=? AND client_id=?', (digest(token), client_id)).fetchone()

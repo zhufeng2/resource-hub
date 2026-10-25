@@ -307,6 +307,18 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(response.status_code, 303)
         self.assertEqual(parse_qs(urlsplit(response.headers['location']).query)['error'], ['access_denied'])
 
+    def test_mcp_personal_token_rotation_and_revoke(self):
+        token = self.store.issue_mcp_token('alice', self.settings.resource, 30)
+        self.assertTrue(token.startswith('rh_mcp_'))
+        user = self.store.authenticate(token, self.settings.resource)
+        self.assertEqual(user['username'], 'alice')
+        self.assertIsNone(self.store.authenticate(token, 'https://other.example/mcp'))
+        replacement = self.store.issue_mcp_token('alice', self.settings.resource, 30)
+        self.assertIsNone(self.store.authenticate(token, self.settings.resource))
+        self.assertEqual(self.store.authenticate(replacement, self.settings.resource)['username'], 'alice')
+        self.assertEqual(self.store.revoke_mcp_token('alice'), 1)
+        self.assertIsNone(self.store.authenticate(replacement, self.settings.resource))
+
     def test_deny_and_transport_validation(self):
         _, client_id, _ = self.login()
         params = {'client_id': client_id, 'redirect_uri': CALLBACK, 'response_type': 'code',

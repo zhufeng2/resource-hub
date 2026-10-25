@@ -24,6 +24,11 @@ def main():
     limit.add_argument('username')
     limit.add_argument('limit', type=int)
     sub.add_parser('list-users')
+    mcp = sub.add_parser('issue-mcp-token', help='为 DeepSeek Harness 等客户端生成长期 Bearer Token')
+    mcp.add_argument('username')
+    mcp.add_argument('--days', type=int, default=365, help='有效期天数，默认 365')
+    sub.add_parser('revoke-mcp-token', help='吊销该账号的 MCP Token').add_argument('username')
+    sub.add_parser('list-mcp-tokens', help='列出 MCP Token 的账号和到期时间')
     sub.add_parser('cleanup', help='清理过期授权及旧结果')
     sub.add_parser('make-admin', help='将已有账号设为管理员').add_argument('username')
     args = parser.parse_args()
@@ -41,6 +46,21 @@ def main():
         return
     elif args.command == 'set-limit':
         store.change_user(args.username, limit=args.limit)
+    elif args.command == 'issue-mcp-token':
+        base = os.getenv('PUBLIC_BASE_URL', '').rstrip('/')
+        if not base.startswith('https://'):
+            raise ValueError('需要配置 HTTPS 的 PUBLIC_BASE_URL')
+        token = store.issue_mcp_token(args.username, base + '/mcp', args.days)
+        print('MCP Token（只显示一次，请妥善保存）：')
+        print(token)
+        return
+    elif args.command == 'revoke-mcp-token':
+        count = store.revoke_mcp_token(args.username)
+        print(f'已吊销 {count} 个 MCP Token。')
+        return
+    elif args.command == 'list-mcp-tokens':
+        print(json.dumps(store.mcp_tokens(), ensure_ascii=False, indent=2))
+        return
     elif args.command == 'cleanup':
         store.cleanup()
     elif args.command == 'make-admin':

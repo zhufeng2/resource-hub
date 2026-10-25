@@ -95,6 +95,38 @@ docker compose --project-directory backend --env-file backend/.env -f backend/co
 
 参考：[MCP 认证文档](https://developers.openai.com/plugins/build/auth)、[连接与测试](https://developers.openai.com/plugins/deploy/connect-chatgpt)。
 
+### 5. 配置 DeepSeek Harness（静态 Token）
+
+DeepSeek Harness 的 MCP 客户端使用 Streamable HTTP + `Authorization` 请求头，不走 ChatGPT 的 OAuth 回调。为账号生成一个长期 Token：
+
+```bash
+docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app \
+  python -m backend.manage issue-mcp-token bob --days 365
+```
+
+Token 只显示一次；重新生成会立即使旧 Token 失效。吊销：
+
+```bash
+docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app \
+  python -m backend.manage revoke-mcp-token bob
+```
+
+在 DSH 的 Profile patch（`$DSH_HOME/profiles/<profile>/cordis.patch.yml`）中合并：
+
+```yaml
+- insert:
+    - id: resource-hub-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: resource-hub
+        transport: streamable-http
+        url: https://你的域名/mcp
+        headers:
+          Authorization: Bearer rh_mcp_xxx
+```
+
+保存后等待 DSH 热加载或重启 Host，新建会话即可看到 `mcp__resource-hub__*` 工具。Token 与网页账号共用每日额度；管理员账号不限次数。不要把 Token 提交到 Git 或公开聊天。
+
 ## 管理账号
 
 在下面命令前加上 `docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app`，即可在容器内操作：
