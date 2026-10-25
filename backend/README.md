@@ -34,6 +34,8 @@
 
 ## Linux 部署
 
+服务器已有 `pansou-api-1`、需要将本项目接到其 API 并替换旧网页时，按 [连接现有 PanSou 与迁移网页](EXISTING_PANSOU.md) 操作；配套配置为 `compose.pansou.yaml`。
+
 准备 Docker Engine、Compose 插件，以及解析到服务器的专用域名。服务器需可访问 PanSou，入站 TCP 80/443 端口需可用。Caddy 自动配置 HTTPS 证书。
 
 以下命令均在仓库根目录执行。
@@ -124,6 +126,22 @@ python -m backend.manage cleanup
 - 结果按账号隔离，24 小时后不可读取；搜索记录和计数最多保留 31 天。
 
 ## 运维与备份
+
+### 一键更新
+
+首次部署成功后，在服务器项目根目录运行 `bash update.sh`，自动拉取 `origin/main`、构建并更新 app，等待健康检查。脚本可从其他目录通过绝对路径运行；`bash update.sh --force` 可强制重新构建当前版本。
+
+脚本保留服务器 `.env` 和数据卷，更新网页、API 与 MCP，不重启 PanSou 或入口代理。Git 冲突会停止，不会强制覆盖本地修改。镜像构建失败时旧应用继续运行；替换应用后健康检查失败会报错，需要人工排查，脚本不自动回滚数据库或容器。Caddy 配置或部署结构变更仍需另行处理。
+
+默认通过 `public.ecr.aws/docker/library/python:3.12-slim` 构建临时 Dockerfile，适配此次部署已验证可用的镜像来源，不修改仓库 Dockerfile；可用 `RESOURCE_HUB_PYTHON_IMAGE` 环境变量指定其他来源。脚本首次运行会构建一次，之后相同的已成功部署提交自动跳过。已有的手工 `compose.pansou.yaml` 若与远程内容一致，会先备份再纳入 Git 管理；内容不一致则停止。若仓库 Dockerfile 后续有改动，与服务器手工修改冲突时仍需人工合并。
+
+如需自动检查，执行 `crontab -e`，加入下面一行（路径按实际部署位置修改）：
+
+```cron
+*/5 * * * * /bin/bash /opt/apps/resource-hub/update.sh >> /var/log/resource-hub-update.log 2>&1
+```
+
+这会每 5 分钟检查一次，只有新提交或上次未成功部署时才重建。使用具有项目和 Docker 权限的账号配置定时任务，并确保该账号能免交互拉取仓库。脚本依赖 Linux 的 Bash、Git、Docker Compose 与 `flock`。首次运行前应将脚本提交到 GitHub 并同步至服务器；不要提交 `.env`。定时任务日志应按服务器策略轮转。
 
 账号、授权和用量保存在 `app_data` 卷中的 SQLite 数据库。重建容器会保留数据；`docker compose down -v` 会删除数据卷。
 

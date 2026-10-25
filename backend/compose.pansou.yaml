@@ -1,0 +1,15 @@
+# Use with compose.yaml after connecting the existing PanSou container to this network.
+# See EXISTING_PANSOU.md. The alias must also be kept in PanSou's own Compose file.
+services:
+  app:
+    environment:
+      PANSOU_BASE_URL: http://pansou-upstream:8888
+      PANSOU_ALLOW_HTTP: "true"
+    networks:
+      - default
+      - pansou
+
+networks:
+  pansou:
+    external: true
+    name: resource-hub-upstream
