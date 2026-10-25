@@ -193,18 +193,28 @@ class OAuth:
             return error('rate_limit_exceeded', 429)
         form = await request.form()
         p = {k: str(v) for k, v in form.items()}
+        client = (p.get('client_id') or '')[:8]
+        log.info('OAuth token submitted grant=%s client=%s resource=%s db=%s pid=%s',
+                 p.get('grant_type'), client, p.get('resource'), self.store.path, os.getpid())
         if p.get('grant_type') not in ('authorization_code', 'refresh_token'):
+            log.warning('OAuth token unsupported grant=%s client=%s', p.get('grant_type'), client)
             return error('unsupported_grant_type')
         if not self.store.client_redirects(p.get('client_id', '')):
+            log.warning('OAuth token invalid client=%s db=%s pid=%s', client, self.store.path, os.getpid())
             return error('invalid_client', 401)
         if p.get('resource') != self.settings.resource:
+            log.warning('OAuth token invalid target client=%s resource=%s db=%s pid=%s', client, p.get('resource'), self.store.path, os.getpid())
             return error('invalid_target')
         if p.get('scope', 'search') != 'search':
+            log.warning('OAuth token invalid scope client=%s scope=%s', client, p.get('scope'))
             return error('invalid_scope')
         try:
-            return JSONResponse(self.store.exchange(p, self.settings.resource), headers=NO_STORE)
-        except ValueError:
+            result = self.store.exchange(p, self.settings.resource)
+        except ValueError as exc:
+            log.warning('OAuth token rejected grant=%s client=%s reason=%s db=%s pid=%s', p.get('grant_type'), client, exc, self.store.path, os.getpid())
             return error('invalid_grant')
+        log.info('OAuth token issued grant=%s client=%s db=%s pid=%s', p.get('grant_type'), client, self.store.path, os.getpid())
+        return JSONResponse(result, headers=NO_STORE)
 
     async def revoke(self, request):
         if self.limited(request, 'revoke', 100):
