@@ -151,7 +151,8 @@ class Store:
     def preferences(self, user_id, value=None):
         defaults = {'cloud_types': ['quark'], 'channels': [], 'plugins': [], 'src': 'all',
                     'page_size': 20, 'view': 'list', 'sort': 'relevance', 'theme': 'light',
-                    'auto_check': False, 'hide_invalid': False}
+                    'auto_check': False, 'hide_invalid': False, 'include_words': '',
+                    'exclude_words': '', 'match_mode': 'any'}
         with self.connection(value is not None) as db:
             if value is not None:
                 db.execute('INSERT OR REPLACE INTO preferences VALUES(?,?)', (user_id, json.dumps(value)))

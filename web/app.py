@@ -12,10 +12,10 @@ from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from .backend import SearchFailure
-from .service import validate_preferences
-from .store import digest
-from .upstream import PROVIDERS
+from online.backend import SearchFailure
+from online.service import validate_preferences
+from online.store import digest
+from online.upstream import PROVIDERS
 
 STATIC = Path(__file__).parent / 'static'
 COOKIE = 'rh_session'
@@ -58,7 +58,7 @@ class Web:
         return data
 
     def profile(self, user):
-        return {'username': user['username'], 'is_admin': bool(user['is_admin']),
+        return {'id': str(user['id']), 'account_status': 'active', 'username': user['username'], 'is_admin': bool(user['is_admin']),
                 'quota': self.store.quota(user['id']), 'preferences': self.store.preferences(user['id']),
                 'csrf': user['csrf'], 'mcp_url': self.settings.resource,
                 'preview': bool(getattr(self.upstream, 'preview', False))}
@@ -307,7 +307,7 @@ class Web:
         return endpoint
 
     def routes(self):
-        definitions = [('/', self.index, ['GET']), ('/api/session', self.session, ['GET']),
+        definitions = [('/', self.index, ['GET']), ('/profile', self.index, ['GET']), ('/api/session', self.session, ['GET']),
             ('/api/login', self.login, ['POST']), ('/api/logout', self.logout, ['POST']),
             ('/api/search', self.search, ['POST']), ('/api/results/{id}', self.results, ['GET']),
             ('/api/history', self.history, ['GET']), ('/api/preferences', self.preferences, ['PUT']),

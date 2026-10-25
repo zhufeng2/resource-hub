@@ -13,7 +13,7 @@ CLOUDS = {'quark', 'baidu', 'aliyun', 'guangya', 'tianyi', '115', 'xunlei', 'uc'
 
 def validate_preferences(value):
     if not isinstance(value, dict) or set(value) - {
-            'cloud_types', 'channels', 'plugins', 'src', 'page_size', 'view', 'sort', 'theme', 'auto_check', 'hide_invalid'}:
+            'cloud_types', 'channels', 'plugins', 'src', 'page_size', 'view', 'sort', 'theme', 'auto_check', 'hide_invalid', 'include_words', 'exclude_words', 'match_mode'}:
         raise ValueError('配置格式不正确')
     for key in ('cloud_types', 'channels', 'plugins'):
         items = value.get(key, [])
@@ -22,6 +22,11 @@ def validate_preferences(value):
             raise ValueError('搜索源名称格式不正确')
     if set(value.get('cloud_types', [])) - CLOUDS:
         raise ValueError('网盘类型不正确')
+    for key in ('include_words', 'exclude_words'):
+        if key in value and (not isinstance(value[key], str) or len(value[key]) > 200):
+            raise ValueError('关键词筛选需在 200 字符以内')
+    if value.get('match_mode', 'any') not in ('any', 'all'):
+        raise ValueError('匹配方式不正确')
     for key in ('auto_check', 'hide_invalid'):
         if key in value and type(value[key]) is not bool:
             raise ValueError('检测选项格式不正确')
@@ -83,6 +88,8 @@ class SearchService:
                 if not isinstance(result, dict) or not isinstance(result.get('results'), list):
                     raise SearchFailure('搜索返回格式异常。')
                 result['query'] = query
+                result['options'] = {k: v for k, v in options.items() if k != 'refresh'}
+                result['source_binding'] = identity
                 self.store.finish(row['id'], result)
             return self.page(user['id'], self.store.search(user['id'], row['id']))
         except ValueError as exc:

@@ -7,6 +7,8 @@ RUN pip install --no-cache-dir -r online/requirements.txt \
     && useradd --uid 10001 --create-home service \
     && mkdir /data && chown service:service /data
 COPY online /app/online
+COPY web /app/web
+COPY gpt /app/gpt
 COPY skills/resource-hub/scripts /app/skills/resource-hub/scripts
 USER service
 EXPOSE 8000
