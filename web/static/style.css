@@ -269,3 +269,4 @@ body.has-results .ambient{opacity:0}
 .result-list .result-actions{display:none}
 .result-list .result-row{grid-template-columns:auto minmax(0,1fr);grid-template-areas:"icon main";align-items:start;cursor:pointer}
 .result-list .result-row:focus-visible{outline:3px solid #80ae92;outline-offset:2px}
+#input-error{text-align:center}
