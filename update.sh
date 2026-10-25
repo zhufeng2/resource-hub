@@ -67,7 +67,9 @@ main() {
   for index in "${!migration_paths[@]}"; do
     mv -- "${migration_paths[$index]}" "${migration_backups[$index]}"
   done
-  if ! git merge --ff-only "$target_commit"; then
+  # Keep private update artifacts restricted, but make checked-out code readable
+  # by the non-root account inside the application image.
+  if ! (umask 022; git merge --ff-only "$target_commit"); then
     for index in "${!migration_paths[@]}"; do
       [[ -e "${migration_paths[$index]}" ]] || cp -- "${migration_backups[$index]}" "${migration_paths[$index]}"
     done
