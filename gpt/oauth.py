@@ -9,7 +9,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
-from online.store import digest
+from backend.store import digest
 
 NO_STORE = {'Cache-Control': 'no-store', 'Pragma': 'no-cache'}
 

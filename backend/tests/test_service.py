@@ -13,10 +13,10 @@ from urllib.parse import parse_qs, urlsplit
 
 from starlette.testclient import TestClient
 
-from online.app import create_app
-from online.backend import SearchFailure, search_pansou
-from online.config import Settings
-from online.store import Store, day_key, pkce
+from backend.app import create_app
+from backend.backend import SearchFailure, search_pansou
+from backend.config import Settings
+from backend.store import Store, day_key, pkce
 
 logging.getLogger('httpx').setLevel(logging.WARNING)
 
@@ -204,7 +204,7 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(day_key(0), '1970-01-01')
         # 16:00 UTC is midnight in Shanghai, independent of the server timezone.
         self.assertNotEqual(day_key(57599), day_key(57600))
-        with patch('online.store.time.time', return_value=time.time() + 86400):
+        with patch('backend.store.time.time', return_value=time.time() + 86400):
             self.assertEqual(reopened.quota(user['id'])['remaining'], 5)
 
     def test_limits_expiry_invalid_input_and_body_limit(self):
@@ -267,7 +267,7 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
             {'title': 'safe', 'url': 'https://pan.quark.cn/s/example'},
             {'title': 'bad', 'url': 'javascript:alert(1)'}]}).encode(), b'')
         with patch.dict(os.environ, {'PANSOU_API_TOKEN': 'test-token'}), patch(
-                'online.backend.asyncio.create_subprocess_exec', return_value=process) as spawn:
+                'backend.backend.asyncio.create_subprocess_exec', return_value=process) as spawn:
             result = await search_pansou('--setup', 1)
         args = spawn.call_args.args
         self.assertEqual(args[-2:], ('--', '--setup'))
@@ -283,13 +283,13 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         process.kill = Mock()
         process.communicate.side_effect = asyncio.TimeoutError
         with patch.dict(os.environ, {'PANSOU_API_TOKEN': 'test-token'}), patch(
-                'online.backend.asyncio.create_subprocess_exec', return_value=process):
+                'backend.backend.asyncio.create_subprocess_exec', return_value=process):
             with self.assertRaises(SearchFailure):
                 await search_pansou('test', 1)
         process.kill.assert_called_once()
         process.wait.assert_awaited_once()
         with patch.dict(os.environ, {}, clear=True), patch(
-                'online.backend.asyncio.create_subprocess_exec') as spawn:
+                'backend.backend.asyncio.create_subprocess_exec') as spawn:
             with self.assertRaises(SearchFailure):
                 await search_pansou('test', 1)
             spawn.assert_not_called()

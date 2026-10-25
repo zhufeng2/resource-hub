@@ -12,7 +12,7 @@ from .store import Store
 def main():
     parser = argparse.ArgumentParser(description='管理在线搜索账号；不影响本地 Skill')
     parser.add_argument('--database', type=Path,
-                        default=Path(os.getenv('DATABASE_PATH', 'online/data/service.sqlite3')))
+                        default=Path(os.getenv('DATABASE_PATH', 'backend/data/service.sqlite3')))
     sub = parser.add_subparsers(dest='command', required=True)
     add = sub.add_parser('add-user', help='创建账号，交互输入密码')
     add.add_argument('username')

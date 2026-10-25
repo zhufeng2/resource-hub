@@ -7,8 +7,8 @@
 **/*.db
 .venv
 .cache
-online/data
-online/.env
+backend/data
+backend/.env
 skill-backups
 **/credentials.json
 **/config.json

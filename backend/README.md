@@ -30,7 +30,7 @@
 
 ## 目录
 
-网页位于 `web/`，MCP 与 OAuth 位于 `gpt/`；`online/` 提供共用逻辑及统一部署入口。
+网页位于 `web/`，MCP 与 OAuth 位于 `gpt/`；`backend/` 提供共用逻辑及统一部署入口。
 
 ## Linux 部署
 
@@ -41,11 +41,11 @@
 ### 1. 配置服务
 
 ```bash
-cp online/.env.example online/.env
-chmod 600 online/.env
+cp backend/.env.example backend/.env
+chmod 600 backend/.env
 ```
 
-编辑 `online/.env`：
+编辑 `backend/.env`：
 
 | 变量 | 配置说明 |
 | --- | --- |
@@ -65,7 +65,7 @@ PanSou 的访问凭据保存在服务器配置中，网页和 MCP 用户由本�
 ### 2. 启动
 
 ```bash
-docker compose --project-directory online --env-file online/.env -f online/compose.yaml up -d --build
+docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml up -d --build
 ```
 
 服务启动后，访问 `https://你的域名/healthz` 检查状态。如果 HTTPS 证书申请失败，检查域名解析、80/443 端口和 Caddy 日志。
@@ -73,7 +73,7 @@ docker compose --project-directory online --env-file online/.env -f online/compo
 如需同时部署 PanSou 后端，在 `.env` 中配置 `PANSOU_USERNAME`、`PANSOU_PASSWORD` 和强随机的 `PANSOU_JWT_SECRET`，使用附加配置启动：
 
 ```bash
-docker compose --project-directory online --env-file online/.env -f online/compose.yaml -f online/compose.pansou.yaml up -d --build
+docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml -f backend/compose.pansou.yaml up -d --build
 ```
 
 此配置通过内部网络连接 PanSou，其 8888 端口不映射到宿主机。可用 `PANSOU_PLUGINS` 指定启用的插件。管理命令也需使用相同的两个 `-f` 参数。
@@ -81,16 +81,16 @@ docker compose --project-directory online --env-file online/.env -f online/compo
 ### 3. 创建账号
 
 ```bash
-docker compose --project-directory online --env-file online/.env -f online/compose.yaml exec app python -m online.manage add-user alice --admin
-docker compose --project-directory online --env-file online/.env -f online/compose.yaml exec app python -m online.manage add-user bob --limit 5
+docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app python -m backend.manage add-user alice --admin
+docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app python -m backend.manage add-user bob --limit 5
 ```
 
-按提示输入至少 12 个字符的密码。首个管理员通过命令创建，之后可在网页“账号 → 用户管理”中创建其他用户。已有账号可用 `python -m online.manage make-admin alice` 设置为管理员。
+按提示输入至少 12 个字符的密码。首个管理员通过命令创建，之后可在网页“账号 → 用户管理”中创建其他用户。已有账号可用 `python -m backend.manage make-admin alice` 设置为管理员。
 
 验证 PanSou 配置：
 
 ```bash
-docker compose --project-directory online --env-file online/.env -f online/compose.yaml exec app python skills/resource-hub/scripts/search.py --auth-test
+docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app python skills/resource-hub/scripts/search.py --auth-test
 ```
 
 ### 4. 配置 ChatGPT 连接
@@ -103,15 +103,15 @@ docker compose --project-directory online --env-file online/.env -f online/compo
 
 ## 管理账号
 
-在下面命令前加上 `docker compose --project-directory online --env-file online/.env -f online/compose.yaml exec app`，即可在容器内操作：
+在下面命令前加上 `docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app`，即可在容器内操作：
 
 ```bash
-python -m online.manage list-users
-python -m online.manage set-limit alice 10
-python -m online.manage disable-user alice
-python -m online.manage enable-user alice
-python -m online.manage reset-password alice
-python -m online.manage cleanup
+python -m backend.manage list-users
+python -m backend.manage set-limit alice 10
+python -m backend.manage disable-user alice
+python -m backend.manage enable-user alice
+python -m backend.manage reset-password alice
+python -m backend.manage cleanup
 ```
 
 停用账号或重置密码会撤销已有授权。重新启用后需再次登录。每日额度设为 0 可暂停新搜索；修改 `DEFAULT_DAILY_LIMIT` 只影响之后创建的账号。
@@ -145,27 +145,27 @@ python -m online.manage cleanup
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install -r online/requirements.txt
+python -m pip install -r backend/requirements.txt
 ```
 
 通过运行环境注入配置变量，然后创建账号并启动服务。直接运行时需自行加载环境变量：
 
 ```bash
 umask 077
-python -m online.manage add-user alice
-uvicorn online.app:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log
+python -m backend.manage add-user alice
+uvicorn backend.app:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log
 ```
 
 离线测试：
 
 ```bash
-python -m unittest online.tests.test_service -v
+python -m unittest backend.tests.test_service -v
 ```
 
 测试命令加入网页集成验证：
 
 ```bash
-python -m unittest online.tests.test_service online.tests.test_web -v
+python -m unittest backend.tests.test_service backend.tests.test_web -v
 ```
 
 测试覆盖网页与 OAuth 登录、MCP 调用、并发额度、账号隔离、管理权限和授权撤销。部署后需在实际域名下验证登录、搜索和搜索源绑定。

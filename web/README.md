@@ -1,6 +1,6 @@
 # 网页
 
-`app.py` 提供网页接口，`static/` 包含页面、样式及交互；共用服务入口为 `online.app:create_app`。部署方式见 [部署说明](../online/README.md)。
+`app.py` 提供网页接口，`static/` 包含页面、样式及交互；共用服务入口为 `backend.app:create_app`。部署方式见 [部署说明](../backend/README.md)。
 
 - `/`：居中搜索主页，搜索后在原页面展示结果。
 - `/profile`：搜索记录、搜索源账号、安全设置和用户管理。

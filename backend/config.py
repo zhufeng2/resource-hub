@@ -43,10 +43,10 @@ class Settings:
     def from_env(cls):
         base = os.environ.get('PUBLIC_BASE_URL', '').rstrip('/')
         if not base:
-            raise ValueError('请配置 PUBLIC_BASE_URL，参见 online/README.md')
+            raise ValueError('请配置 PUBLIC_BASE_URL，参见 backend/README.md')
         return cls(
             base_url=base,
-            database=Path(os.getenv('DATABASE_PATH', 'online/data/service.sqlite3')),
+            database=Path(os.getenv('DATABASE_PATH', 'backend/data/service.sqlite3')),
             redirect_uris=tuple(x.strip() for x in os.getenv(
                 'OAUTH_REDIRECT_URIS',
                 'https://chatgpt.com/connector_platform_oauth_redirect').split(',') if x.strip()),

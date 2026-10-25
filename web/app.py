@@ -12,10 +12,10 @@ from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from online.backend import SearchFailure
-from online.service import validate_preferences
-from online.store import digest
-from online.upstream import PROVIDERS
+from backend.backend import SearchFailure
+from backend.service import validate_preferences
+from backend.store import digest
+from backend.upstream import PROVIDERS
 
 STATIC = Path(__file__).parent / 'static'
 COOKIE = 'rh_session'

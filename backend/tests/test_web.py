@@ -9,8 +9,8 @@ import httpx
 
 from . import test_service as fixtures
 from .test_service import BASE, PASSWORD
-from online.app import create_app
-from online.upstream import Upstream
+from backend.app import create_app
+from backend.upstream import Upstream
 
 
 class FakeUpstream:
@@ -155,7 +155,7 @@ class UpstreamTests(unittest.IsolatedAsyncioTestCase):
             return real_client(**kwargs)
 
         with patch.dict(os.environ, {'PANSOU_BASE_URL': 'https://pansou.example', 'PANSOU_USERNAME': 'admin',
-                                    'PANSOU_PASSWORD': 'private-password', 'PANSOU_API_TOKEN': ''}), patch('online.upstream.httpx.AsyncClient', factory):
+                                    'PANSOU_PASSWORD': 'private-password', 'PANSOU_API_TOKEN': ''}), patch('backend.upstream.httpx.AsyncClient', factory):
             upstream = Upstream()
             result = await upstream.search('test', 10, {'cloud_types': ['quark'], 'plugins': ['gying'], 'refresh': True})
             status = await upstream.binding_action({'provider': 'gying', 'upstream_hash': 'a' * 64}, 'get_status', {})

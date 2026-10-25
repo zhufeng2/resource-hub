@@ -5,17 +5,17 @@
 | 使用方式 | 功能 | 入口 |
 | --- | --- | --- |
 | 本地 Skill | 资源搜索、核验、夸克转存和文件管理 | 按下方步骤安装 |
-| 网页搜索 | 居中搜索、原地搜索设置、结果导出和个人主页 | [部署与使用说明](online/README.md) |
+| 网页搜索 | 居中搜索、原地搜索设置、结果导出和个人主页 | [部署与使用说明](backend/README.md) |
 | ChatGPT MCP | 资源搜索、结果翻页、每日额度查询 | 使用同一服务的 `/mcp` 地址 |
 
 ## 项目结构
 
 - `web/`：网页路由、页面样式与交互。
 - `gpt/`：ChatGPT MCP 工具和 OAuth 授权。
-- `online/`：共用的账号、搜索、额度及部署配置。
+- `backend/`：共用的账号、搜索、额度及部署配置。
 - `skills/`：本地 Skill。
 
-网页与 GPT 服务使用同一数据库，部署入口为 `online.app:create_app`。
+网页与 GPT 服务使用同一数据库，部署入口为 `backend.app:create_app`。
 
 ## 本地安装
 
@@ -100,7 +100,7 @@ bash -n skills/quarkclouddrive/scripts/install.sh
 bash -n skills/quarkclouddrive/scripts/uninstall.sh
 ```
 
-在线服务的测试与部署步骤见 [online/README.md](online/README.md)。
+在线服务的测试与部署步骤见 [backend/README.md](backend/README.md)。
 
 ## 来源
 

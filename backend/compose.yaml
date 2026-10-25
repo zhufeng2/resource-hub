@@ -2,7 +2,7 @@ services:
   app:
     build:
       context: ..
-      dockerfile: online/Dockerfile
+      dockerfile: backend/Dockerfile
     env_file: .env
     environment:
       DATABASE_PATH: /data/service.sqlite3
@@ -27,7 +27,7 @@ services:
   proxy:
     image: caddy:2-alpine
     environment:
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?请在 online/.env 配置 PUBLIC_BASE_URL}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?请在 backend/.env 配置 PUBLIC_BASE_URL}
     ports:
       - "80:80"
       - "443:443"
