@@ -152,13 +152,27 @@ class Store:
     def preferences(self, user_id, value=None):
         defaults = {'cloud_types': ['quark'], 'channels': [], 'plugins': [], 'src': 'all',
                     'page_size': 20, 'view': 'list', 'sort': 'relevance', 'theme': 'light',
-                    'auto_check': False, 'hide_invalid': False, 'include_words': '',
-                    'exclude_words': '', 'match_mode': 'any'}
+                    'auto_check': True, 'hide_invalid': True, 'include_words': '',
+                    'exclude_words': '', 'match_mode': 'any', 'verification_defaults_v2': True}
+        migrate = None
         with self.connection(value is not None) as db:
             if value is not None:
+                # Mark the preference so a later explicit opt-out is respected.
+                value = {**value, 'verification_defaults_v2': True}
                 db.execute('INSERT OR REPLACE INTO preferences VALUES(?,?)', (user_id, json.dumps(value)))
             row = db.execute('SELECT value FROM preferences WHERE user_id=?', (user_id,)).fetchone()
-        return {**defaults, **(json.loads(row['value']) if row else {})}
+            saved = json.loads(row['value']) if row else None
+            if saved is not None and saved.get('verification_defaults_v2') is not True:
+                # One-time migration: older accounts had verification off by default.
+                saved.update(auto_check=True, hide_invalid=True, verification_defaults_v2=True)
+                if value is not None:
+                    db.execute('UPDATE preferences SET value=? WHERE user_id=?', (json.dumps(saved), user_id))
+                else:
+                    migrate = saved
+        if migrate is not None:
+            with self.connection(True) as db:
+                db.execute('UPDATE preferences SET value=? WHERE user_id=?', (json.dumps(migrate), user_id))
+        return {**defaults, **(saved or {})}
 
     def recent(self, user_id):
         items, seen = [], set()

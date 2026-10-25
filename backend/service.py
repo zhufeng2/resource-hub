@@ -4,16 +4,21 @@ import json
 import re
 import secrets
 import time
+from urllib.parse import urlsplit
 
 from .backend import SearchFailure
 
 CLOUDS = {'quark', 'baidu', 'aliyun', 'guangya', 'tianyi', '115', 'xunlei', 'uc',
           'mobile', 'pikpak', '123', 'magnet', 'ed2k', 'others'}
+CHECK_HOSTS = {'quark': {'pan.quark.cn'}, 'baidu': {'pan.baidu.com', 'yun.baidu.com'},
+               'aliyun': {'alipan.com', 'www.alipan.com', 'www.aliyundrive.com'},
+               'tianyi': {'cloud.189.cn'}, 'uc': {'drive.uc.cn'}, '115': {'115.com'},
+               '123': {'www.123pan.com', 'www.123684.com', 'www.123865.com'}}
 
 
 def validate_preferences(value):
     if not isinstance(value, dict) or set(value) - {
-            'cloud_types', 'channels', 'plugins', 'src', 'page_size', 'view', 'sort', 'theme', 'auto_check', 'hide_invalid', 'include_words', 'exclude_words', 'match_mode'}:
+            'cloud_types', 'channels', 'plugins', 'src', 'page_size', 'view', 'sort', 'theme', 'auto_check', 'hide_invalid', 'include_words', 'exclude_words', 'match_mode', 'verification_defaults_v2'}:
         raise ValueError('配置格式不正确')
     for key in ('cloud_types', 'channels', 'plugins'):
         items = value.get(key, [])
@@ -27,7 +32,7 @@ def validate_preferences(value):
             raise ValueError('关键词筛选需在 200 字符以内')
     if value.get('match_mode', 'any') not in ('any', 'all'):
         raise ValueError('匹配方式不正确')
-    for key in ('auto_check', 'hide_invalid'):
+    for key in ('auto_check', 'hide_invalid', 'verification_defaults_v2'):
         if key in value and type(value[key]) is not bool:
             raise ValueError('检测选项格式不正确')
     for key, allowed in (('src', ('all', 'tg', 'plugin')), ('page_size', (10, 20, 50)),
@@ -54,6 +59,56 @@ class SearchService:
                 'results': rows[offset:offset + limit], 'offset': offset,
                 'returned_count': len(rows[offset:offset + limit]), 'available_count': len(rows),
                 'has_more': offset + limit < len(rows), 'quota': self.store.quota(user_id)}
+
+    async def verify_page(self, data, limit=20, drop_invalid=True):
+        """Annotate and optionally remove dead links before MCP clients see them."""
+        if not isinstance(data, dict) or data.get('error') or not isinstance(data.get('results'), list):
+            return data
+        rows = data['results']
+        for row in rows:
+            if isinstance(row, dict) and not isinstance(row.get('link_check'), dict):
+                row['link_check'] = {'state': 'unknown', 'summary': '暂不支持检测此链接。'}
+        candidates, indices = [], []
+        if hasattr(self.provider, 'check_links'):
+            for index, row in enumerate(rows[:limit]):
+                url = str(row.get('url') or '')
+                cloud = str(row.get('cloud_type') or '')
+                parts = urlsplit(url)
+                if (parts.scheme == 'https' and parts.hostname in CHECK_HOSTS.get(cloud, set())
+                        and not parts.username and not parts.password and parts.port in (None, 443)):
+                    candidates.append({'url': url, 'disk_type': cloud, 'password': row.get('password', '')})
+                    indices.append(index)
+        if not candidates:
+            data['verification'] = '当前结果不支持自动核验；文件内容未核验。'
+            return data
+        try:
+            checked = await self.provider.check_links(candidates)
+        except Exception:
+            data['verification'] = '链接核验服务暂时不可用；以下结果未经核验。'
+            return data
+        if not isinstance(checked, list) or len(checked) != len(candidates):
+            data['verification'] = '链接核验返回异常；以下结果未经核验。'
+            return data
+        for index, result in zip(indices, checked):
+            state = str(result.get('state') or 'unknown') if isinstance(result, dict) else 'unknown'
+            summary = str(result.get('summary') or '')[:160] if isinstance(result, dict) else ''
+            rows[index]['link_check'] = {'state': state, 'summary': summary}
+        valid = sum(1 for index in indices if rows[index]['link_check']['state'] in ('ok', 'good'))
+        bad = sum(1 for index in indices if rows[index]['link_check']['state'] == 'bad')
+        unverified = len(rows) - valid - bad
+        if drop_invalid:
+            kept = [row for row in rows
+                    if not (isinstance(row.get('link_check'), dict) and row['link_check'].get('state') == 'bad')]
+            dropped = len(rows) - len(kept)
+            data['results'] = kept
+            if dropped and isinstance(data.get('available_count'), int):
+                data['available_count'] = max(0, data['available_count'] - dropped)
+        data['returned_count'] = len(data['results'])
+        note = f'已核验 {len(candidates)} 条链接：{valid} 条有效，{bad} 条失效'
+        if unverified:
+            note += f'；{unverified} 条未核验'
+        data['verification'] = note + '；文件内容未核验。'
+        return data
 
     async def search(self, user, query, request_id='', options=None, execute=None, identity='', refresh=False):
         if not isinstance(query, str) or not 1 <= len(query.strip()) <= 120 or any(ord(c) < 32 for c in query):

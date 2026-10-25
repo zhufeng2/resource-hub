@@ -17,6 +17,7 @@ from starlette.testclient import TestClient
 from backend.app import create_app
 from backend.backend import SearchFailure, search_pansou
 from backend.config import Settings
+from backend.service import SearchService
 from backend.store import Store, day_key, pkce
 from gpt.oauth import authorization_cookie
 
@@ -318,6 +319,36 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.store.authenticate(replacement, self.settings.resource)['username'], 'alice')
         self.assertEqual(self.store.revoke_mcp_token('alice'), 1)
         self.assertIsNone(self.store.authenticate(replacement, self.settings.resource))
+
+    def test_preferences_migrate_verification_and_respect_opt_out(self):
+        user_id = self.store.login('alice', PASSWORD)['id']
+        with self.store.connection(True) as db:
+            db.execute('INSERT OR REPLACE INTO preferences VALUES(?,?)',
+                       (user_id, json.dumps({'auto_check': False, 'hide_invalid': False})))
+        migrated = self.store.preferences(user_id)
+        self.assertTrue(migrated['auto_check'])
+        self.assertTrue(migrated['hide_invalid'])
+        self.assertTrue(self.store.preferences(user_id)['auto_check'])
+        opted_out = self.store.preferences(user_id, {**migrated, 'auto_check': False, 'hide_invalid': False})
+        self.assertFalse(opted_out['auto_check'])
+        self.assertFalse(self.store.preferences(user_id)['auto_check'])
+
+    def test_mcp_verification_drops_bad_links(self):
+        class Checker:
+            async def check_links(self, items):
+                return [{'state': 'ok' if index == 0 else 'bad', 'summary': ''}
+                        for index, _ in enumerate(items)]
+
+        service = SearchService(self.settings, self.store, Checker())
+        data = {'results': [
+            {'title': 'good', 'url': 'https://pan.quark.cn/s/good', 'cloud_type': 'quark'},
+            {'title': 'bad', 'url': 'https://pan.quark.cn/s/bad', 'cloud_type': 'quark'},
+        ], 'available_count': 2}
+        result = asyncio.run(service.verify_page(data))
+        self.assertEqual(len(result['results']), 1)
+        self.assertEqual(result['results'][0]['title'], 'good')
+        self.assertEqual(result['available_count'], 1)
+        self.assertIn('1 条失效', result['verification'])
 
     def test_deny_and_transport_validation(self):
         _, client_id, _ = self.login()
