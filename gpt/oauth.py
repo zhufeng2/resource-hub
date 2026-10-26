@@ -45,10 +45,10 @@ def login_page(ticket, message='', status=200):
 <header class="header"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>Resource Hub<span class="brand-caption">资源检索</span></span></a></header>
 <main><section class="login-view"><div class="login-card"><span class="eyebrow">CONNECT YOUR WORKSPACE</span><h1>连接资源搜索</h1>
 <p class="muted">登录后，允许 ChatGPT 使用此账号搜索资源</p>
-<p class="form-error" role="alert">{message}</p><form method="post" action="/oauth/authorize">
+<p class="form-error" role="alert">{message}</p><form method="post" action="/oauth/authorize" data-login-form>
 <input type="hidden" name="ticket" value="{ticket}">
-<label for="username">账号<input id="username" name="username" autocomplete="username" maxlength="64" required></label>
-<label for="password">密码<input id="password" type="password" name="password" autocomplete="current-password" maxlength="256" required></label>
+<label for="username">账号</label><input id="username" name="username" autocomplete="username" maxlength="64" required>
+<label for="password">密码</label><input id="password" type="password" name="password" autocomplete="current-password" maxlength="256" required>
 <button class="primary full" name="action" value="allow">登录并授权搜索</button>
 <button class="text-button full" name="action" value="deny" formnovalidate>取消</button></form>
 <p class="login-help">需要账号或忘记密码？请联系管理员</p></div></section></main><script src="/assets/authorize.js" defer></script></body></html>''',

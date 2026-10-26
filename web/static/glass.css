@@ -450,6 +450,10 @@ body.login-open,body.login-open main { min-height:0; }
 /* 16px stops iOS Safari from zooming the page when a field is focused. */
 #login-panel input { font-size:16px; }
 body.login-open #login-trigger { display:none; }
+/* Labels stay outside the fields: a <label> wrapping an <input> makes some
+   Android WebViews activate the field twice and dismiss the keyboard. */
+[data-login-form] > label { display:block;margin:0 0 8px;font-size:13px;color:var(--muted); }
+[data-login-form] > input { display:block;width:100%;margin:0 0 16px; }
 @media (max-width:760px), (hover:none) and (pointer:coarse) {
   /* Solid surface keeps mobile WebKit keyed fields out of compositing. */
   .login-card { background:#FBFCFE;-webkit-backdrop-filter:none;backdrop-filter:none; }

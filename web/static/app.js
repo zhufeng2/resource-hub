@@ -154,7 +154,7 @@ $('search-settings').addEventListener('close',()=>{
   window.ResourceSelect?.close();
   renderResults();
   syncURL();
-  if(!document.querySelector('dialog[open]'))$('settings-toggle').focus({preventScroll:true});
+  if(!document.querySelector('dialog[open]')&&$('login-panel').hidden)$('settings-toggle').focus({preventScroll:true});
 });
 $('search-settings').addEventListener('click',event=>{
   if(event.target!==event.currentTarget)return;

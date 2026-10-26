@@ -41,6 +41,9 @@ async function serve(page) {
         }), false, `${engine.name()} ${width}: panel must not sit in a fixed layer`);
         const username = page.locator('#login-panel [name=username]');
         const password = page.locator('#login-panel [name=password]');
+        assert.equal(await username.evaluate(el => !!el.closest('label')), false,
+          `${engine.name()} ${width}: login input must not be wrapped in a label`);
+        assert.equal(await username.evaluate(el => el.labels?.[0]?.textContent), '账号');
         await username.tap();
         await username.pressSequentially('keyboard-test');
         for (const height of [520, 380, 844]) {
@@ -76,6 +79,8 @@ async function serve(page) {
         await page.goto('http://login.test/');
         await page.locator('#login-trigger').click();
         assert.equal(await page.locator('#login-dialog').evaluate(el => el.open), true, 'desktop: dialog opens');
+        assert.equal(await page.locator('#login-dialog [name=username]').evaluate(el => !!el.closest('label')), false,
+          'desktop: login input must not be wrapped in a label');
         assert.equal(await page.locator('#login-panel').isVisible(), false, 'desktop: panel stays hidden');
         await page.keyboard.press('Escape');
         assert.equal(await page.locator('#login-dialog').evaluate(el => el.open), false, 'desktop: Escape closes');
