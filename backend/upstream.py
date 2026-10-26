@@ -7,22 +7,35 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from .backend import SearchFailure
+from .errors import SearchFailure
 
 PROVIDERS = {'qqpd': 'QQ 频道', 'gying': '观影', 'panlian': '盘链', 'weibo': '微博', 'woniu': '蜗牛'}
 
 
 class Upstream:
     def __init__(self):
-        self.base = os.getenv('PANSOU_BASE_URL', 'https://pan.sysscitech.com').rstrip('/')
+        self.base = os.getenv('PANSOU_BASE_URL', '').rstrip('/')
         parts = urlsplit(self.base)
         if (not parts.hostname or parts.username or parts.password or parts.query or parts.fragment
                 or parts.scheme not in ('https', 'http')
                 or (parts.scheme == 'http' and os.getenv('PANSOU_ALLOW_HTTP') != 'true')):
-            raise ValueError('PanSou 地址需使用 HTTPS；内部 HTTP 部署需设置 PANSOU_ALLOW_HTTP=true')
+            raise ValueError('请配置 PANSOU_BASE_URL；需使用 HTTPS，内部 HTTP 需设置 PANSOU_ALLOW_HTTP=true')
         self._token = ''
         self._expires = 0
         self._lock = asyncio.Lock()
+
+    async def fetch(self, method, path, *, timeout, **kwargs):
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+            async with client.stream(method, self.base + path, **kwargs) as response:
+                content = bytearray()
+                async for chunk in response.aiter_bytes():
+                    content.extend(chunk)
+                    if len(content) > 4_000_000:
+                        raise ValueError('response too large')
+                headers = {k: v for k, v in response.headers.items()
+                           if k not in ('content-encoding', 'content-length')}
+                return httpx.Response(response.status_code, headers=headers,
+                                      content=bytes(content), request=response.request)
 
     async def token(self, force=False):
         fixed = os.getenv('PANSOU_API_TOKEN', '').strip()
@@ -34,16 +47,16 @@ class Upstream:
             username, password = os.getenv('PANSOU_USERNAME'), os.getenv('PANSOU_PASSWORD')
             if not username or not password:
                 raise SearchFailure('搜索服务尚未配置，请联系管理员。')
-            async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
-                response = await client.post(self.base + '/api/auth/login', json={'username': username, 'password': password})
-                response.raise_for_status()
-                data = response.json()
-                data = data.get('data', data) if isinstance(data, dict) else {}
-                token = data.get('token')
-                if not isinstance(token, str) or not token:
-                    raise SearchFailure('搜索服务认证失败，请联系管理员。')
-                self._token, self._expires = token, time.time() + 1200
-                return token
+            response = await self.fetch('POST', '/api/auth/login', timeout=15,
+                                        json={'username': username, 'password': password})
+            response.raise_for_status()
+            data = response.json()
+            data = data.get('data', data) if isinstance(data, dict) else {}
+            token = data.get('token') if isinstance(data, dict) else None
+            if not isinstance(token, str) or not token:
+                raise SearchFailure('搜索服务认证失败，请联系管理员。')
+            self._token, self._expires = token, time.time() + 1200
+            return token
 
     async def request(self, path, payload=None, *, method='POST', timeout=30, raw=False):
         if not path.startswith('/') or path.startswith('//'):
@@ -51,16 +64,13 @@ class Upstream:
         try:
             for attempt in range(2):
                 token = await self.token(force=bool(attempt))
-                async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
-                    response = await client.request(method, self.base + path, json=payload,
-                                                    headers={'Authorization': 'Bearer ' + token})
+                response = await self.fetch(method, path, timeout=timeout, json=payload,
+                                            headers={'Authorization': 'Bearer ' + token})
                 if response.status_code == 401 and attempt == 0 and not os.getenv('PANSOU_API_TOKEN'):
                     continue
                 if raw:
                     return response
                 response.raise_for_status()
-                if len(response.content) > 4_000_000:
-                    raise ValueError('response too large')
                 data = response.json()
                 if not isinstance(data, dict):
                     raise ValueError('invalid response')
@@ -89,6 +99,8 @@ class Upstream:
             if not isinstance(items, list):
                 continue
             for item in items:
+                if not isinstance(item, dict):
+                    continue
                 url = str(item.get('url') or '').split('|')[0]
                 if (url in seen or len(url) > 4096 or
                         not url.startswith(('https://', 'http://', 'magnet:', 'ed2k:'))):

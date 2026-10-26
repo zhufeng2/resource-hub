@@ -13,3 +13,11 @@ skill-backups
 **/credentials.json
 **/config.json
 node_modules
+
+**/*.mcp.key
+**/.env
+**/.env.*
+**/.DS_Store
+web/tests
+web/design
+backend/tests

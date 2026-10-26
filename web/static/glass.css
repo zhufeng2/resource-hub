@@ -1,7 +1,6 @@
 /* Light frosted glass. Loaded last; structure and behavior stay in the base sheets. */
 :root,
-:root[data-theme=light],
-:root[data-theme=dark] {
+:root[data-theme=light]{
   --bg:#f5f5f7;
   --surface:rgb(255 255 255 / 28%);
   --ink:#1d1d1f;
@@ -36,8 +35,7 @@ body::after {
   content:"";position:fixed;inset:0;z-index:1000;pointer-events:none;opacity:.012;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23fff' filter='url(%23grain)' d='M0 0h180v180H0z'/%3E%3C/svg%3E");
 }
-.ambient,body.has-results .ambient { display:none; }
-body:not(.has-results) .search-center::before { content:none; }
+
 .hero-symbol,.hero-symbol i,.hero-inner h1,.hero-inner p { animation:none; }
 .hero-inner h1 { font-size:clamp(36px,5vw,60px);font-weight:600;letter-spacing:-2.4px; }
 .hero-inner p { font-size:16px;color:var(--muted);margin:18px 0 40px; }
@@ -74,8 +72,7 @@ dialog,
 .search-box input { font-size:17px; }
 .search-box input::placeholder { font-size:15px;color:var(--faint); }
 .search-box .primary { min-height:48px;border-radius:16px; }
-.search-box:focus-within,
-[data-theme=dark] .search-box:focus-within {
+.search-box:focus-within{
   border-color:rgb(0 102 204 / 40%);
   box-shadow:0 0 0 3px rgb(0 102 204 / 12%),var(--glass-shadow);
 }
@@ -205,7 +202,7 @@ input:focus,input:focus-visible,textarea:focus,textarea:focus-visible,select:foc
 }
 input[role=switch] { background:rgb(29 29 31 / 18%); }
 input[role=switch]:checked { background:var(--accent); }
-.select-trigger:hover,[data-theme=dark] .select-trigger:hover { border-color:rgb(29 29 31 / 18%); }
+.select-trigger:hover{ border-color:rgb(29 29 31 / 18%); }
 .select-options { --glass-blur:32px;border-radius:16px;animation:none; }
 .select-option { border-radius:12px;font-size:14px; }
 .select-option[aria-selected=true] { color:var(--ink); }
@@ -221,13 +218,13 @@ input[role=switch]:checked { background:var(--accent); }
 .form-error:empty { margin:0; }
 
 @media(hover:hover) and (pointer:fine) {
-  .result-list .result-row:hover,[data-theme=dark] .result-list .result-row:hover {
+  .result-list .result-row:hover{
     transform:translateY(-4px);border-color:rgb(29 29 31 / 18%);box-shadow:var(--glass-hover-shadow);
   }
   .primary:hover,.secondary:hover { transform:translateY(-2px); }
 }
 @media(max-width:760px) {
-  :root,:root[data-theme=light],:root[data-theme=dark] {
+  :root,:root[data-theme=light]{
     --glass-blur:30px;
     --glass-shadow:0 4px 20px rgb(31 38 55 / 5%),inset 0 1px 0 rgb(255 255 255 / 90%),inset 0 -1px 0 rgb(29 29 31 / 3%);
   }
@@ -281,8 +278,8 @@ input[role=switch]:checked { background:var(--accent); }
   .result-list .result-row:hover,.primary:hover,.secondary:hover { transform:none; }
 }
 /* Search text is part of its parent surface, never a second inset card. */
-.search-box,[data-theme=dark] .search-box { border-color:var(--line);box-shadow:var(--glass-shadow); }
-.search-box:focus-within,[data-theme=dark] .search-box:focus-within {
+.search-box{ border-color:var(--line);box-shadow:var(--glass-shadow); }
+.search-box:focus-within{
   border-color:rgb(0 102 204 / 40%);
   box-shadow:0 0 0 3px rgb(0 102 204 / 12%),var(--glass-shadow);
 }
@@ -296,12 +293,12 @@ input[role=switch]:checked { background:var(--accent); }
 .primary::after { display:none; }
 .brand-caption { margin-left:10px;color:var(--faint);font-size:12px;font-weight:400; }
 @media(hover:hover) and (pointer:fine) {
-  .result-list .result-row:hover,[data-theme=dark] .result-list .result-row:hover { transform:translateY(-2px); }
+  .result-list .result-row:hover{ transform:translateY(-2px); }
   .primary:hover,.secondary:hover { transform:translateY(-1px); }
   .primary:active,.secondary:active { transform:scale(.97); }
 }
 @media(prefers-reduced-motion:reduce) {
-  .result-list .result-row:hover,[data-theme=dark] .result-list .result-row:hover,.primary:hover,.secondary:hover { transform:none; }
+  .result-list .result-row:hover,.primary:hover,.secondary:hover { transform:none; }
 }
 
 /* Quiet background; material is carried by the surfaces. */
@@ -313,7 +310,6 @@ input:not([type=checkbox]):not([type=file]),textarea,select,.select-trigger {
   border-color:rgb(70 90 115 / 15%);
 }
 dialog .settings-sheet { color:var(--ink); }
-
 
 /* Remove the full-width white rule shown in the header. */
 .header,body.has-results .header { border-bottom:0;box-shadow:none; }

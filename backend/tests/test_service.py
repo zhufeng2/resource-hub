@@ -9,13 +9,13 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 from starlette.testclient import TestClient
 
 from backend.app import create_app
-from backend.backend import SearchFailure, search_pansou
+from backend.errors import SearchFailure
 from backend.config import Settings
 from backend.service import SearchService
 from backend.store import Store, day_key, pkce
@@ -30,6 +30,9 @@ PASSWORD = 'test-password-for-online'
 
 class ServiceTests(unittest.TestCase):
     def setUp(self):
+        environment = patch.dict(os.environ, {'PANSOU_BASE_URL': 'https://pansou.example'})
+        environment.start()
+        self.addCleanup(environment.stop)
         root = Path(__file__).resolve().parents[2] / '.cache' / 'online-tests'
         root.mkdir(parents=True, exist_ok=True)
         self.temp = tempfile.TemporaryDirectory(dir=root)
@@ -367,42 +370,6 @@ class ServiceTests(unittest.TestCase):
         params['code_challenge_method'] = 'plain'
         response = self.client.get('/oauth/authorize', params=params, follow_redirects=False)
         self.assertEqual(parse_qs(urlsplit(response.headers['location']).query)['error'], ['invalid_request'])
-
-
-class BackendTests(unittest.IsolatedAsyncioTestCase):
-    async def test_subprocess_is_search_only_and_treats_query_as_data(self):
-        process = AsyncMock()
-        process.returncode = 0
-        process.communicate.return_value = (json.dumps({'results': [
-            {'title': 'safe', 'url': 'https://pan.quark.cn/s/example'},
-            {'title': 'bad', 'url': 'javascript:alert(1)'}]}).encode(), b'')
-        with patch.dict(os.environ, {'PANSOU_API_TOKEN': 'test-token'}), patch(
-                'backend.backend.asyncio.create_subprocess_exec', return_value=process) as spawn:
-            result = await search_pansou('--setup', 1)
-        args = spawn.call_args.args
-        self.assertEqual(args[-2:], ('--', '--setup'))
-        self.assertNotIn('test-token', args)
-        self.assertEqual(len(result['results']), 1)
-        self.assertIn('未核验', result['verification'])
-
-    async def test_timeout_kills_worker_and_missing_credentials_do_not_spawn(self):
-        process = AsyncMock()
-        process.returncode = None
-        # kill() is synchronous on asyncio subprocess handles.
-        from unittest.mock import Mock
-        process.kill = Mock()
-        process.communicate.side_effect = asyncio.TimeoutError
-        with patch.dict(os.environ, {'PANSOU_API_TOKEN': 'test-token'}), patch(
-                'backend.backend.asyncio.create_subprocess_exec', return_value=process):
-            with self.assertRaises(SearchFailure):
-                await search_pansou('test', 1)
-        process.kill.assert_called_once()
-        process.wait.assert_awaited_once()
-        with patch.dict(os.environ, {}, clear=True), patch(
-                'backend.backend.asyncio.create_subprocess_exec') as spawn:
-            with self.assertRaises(SearchFailure):
-                await search_pansou('test', 1)
-            spawn.assert_not_called()
 
 
 if __name__ == '__main__':

@@ -10,15 +10,13 @@ from urllib.error import HTTPError, URLError
 
 from common import CONFIG, base_url, cache_get, cache_path, cache_put, load_config, request, unwrap
 
-# ====== 需 Authorization 头的服务可在此填 Token；留空则读环境变量或配置文件 ======
-STATIC_TOKEN = ''
 TOKEN_TTL = 1500
 SEARCH_TTL = 600
 EARLY_TTL = 15
 
 
 def api_token():
-    token = (STATIC_TOKEN or os.getenv('PANSOU_API_TOKEN', '')).strip()
+    token = os.getenv('PANSOU_API_TOKEN', '').strip()
     if token:
         return token
     data = load_config()
@@ -43,6 +41,7 @@ def credentials():
 
 
 def setup():
+    base_url()  # Validate the destination before saving credentials.
     username = input('PanSou 用户名：').strip()
     password = getpass.getpass('PanSou 密码（不显示）：')
     if not username or not password:

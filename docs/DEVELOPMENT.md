@@ -75,7 +75,7 @@ uvicorn backend.app:create_app --factory --host 127.0.0.1 --port 8000 --no-acces
 在仓库根目录运行：
 
 ```bash
-python -m unittest backend.tests.test_service backend.tests.test_web -v
+python -m unittest discover -s backend/tests -t . -v
 python3 skills/resource-hub/tests/test_workflow.py
 python3 -m compileall -q install.py backend gpt web skills/resource-hub/scripts
 bash -n update.sh
@@ -115,3 +115,7 @@ node --check web/static/controls.js
 结构样式位于 `style.css` 与 `interface.css`，最终视觉样式位于 `glass.css`。修改前查看[界面设计规范](../web/design/glassmorphism.md)，避免单个组件覆盖后造成颜色、透明度或对齐方式不一致。
 
 本地 Skill 的执行协议位于各自 `SKILL.md`，不是普通网页帮助文档。修改其行为时应核对对应脚本和工作流测试。第三方文件的来源与范围见 [THIRD_PARTY.md](../THIRD_PARTY.md)。
+
+## 审计与缓存
+
+安全边界和部署限制见[安全审查记录](SECURITY_REVIEW.md)。本地 `.cache/*-qa/`、`.cache/npm/`、`.cache/ms-playwright/` 和 `__pycache__/` 可在测试结束后删除。`node_modules/` 是可重新安装的开发依赖。不要整目录删除 `.cache/`：其中可能有开发数据库，`.cache/update/` 还存放部署锁、版本记录与迁移备份。不要把 `docker compose down -v` 或 `docker volume prune` 当作清理缓存使用。

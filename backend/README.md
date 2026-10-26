@@ -29,7 +29,7 @@ chmod 600 backend/.env
 | 变量 | 说明 |
 | --- | --- |
 | `PUBLIC_BASE_URL` | 自己的网站根地址，例如 `https://search.example.com`，不带路径 |
-| `PANSOU_BASE_URL` | 实际的 PanSou API 根地址；应替换示例文件里的预置地址 |
+| `PANSOU_BASE_URL` | 必须配置实际的 PanSou API 根地址；不能使用 Resource Hub 测试网站地址 |
 | `PANSOU_API_TOKEN` | 上游固定 Token；使用它时无需设置上游账号密码 |
 | `PANSOU_USERNAME` / `PANSOU_PASSWORD` | 上游账号密码，必须成对配置；Token 优先 |
 | `OAUTH_REDIRECT_URIS` | 客户端提供的准确 OAuth 回调地址，多个以逗号分隔 |
@@ -125,7 +125,7 @@ bash update.sh
 
 备份时停止 app 后复制数据卷，或使用 SQLite 在线备份接口。数据库使用 WAL 模式，直接复制正在写入的单个数据库文件可能遗漏数据。备份含搜索记录和认证信息，应限制访问。另行备份 `.env` 和入口代理配置，以便恢复部署。
 
-搜索结果在 24 小时内可读取；搜索记录和计数最多保留 31 天。用户可删除记录并擦除关键词与结果，计次和请求标识仍按保留策略保存，防止删除记录后返还额度。详细计次规则见 [MCP 额度说明](../gpt/README.md#额度规则)。
+搜索关键词和结果在 24 小时后由定时清理任务擦除（最多延迟 5 分钟）；计数和请求标识最多保留 31 天。用户可删除记录并擦除关键词与结果，计次和请求标识仍按保留策略保存，防止删除记录后返还额度。详细计次规则见 [MCP 额度说明](../gpt/README.md#额度规则)。
 
 ## 故障排查
 
@@ -153,3 +153,7 @@ docker compose --project-directory backend --env-file backend/.env -f backend/co
 用户可在“个人主页 → 安全与连接 → MCP 服务”生成、查看、复制和撤销自己的 Token。网页读取接口要求登录，写操作沿用同源与 CSRF 校验；Token 认证仍绑定用户和站点资源，共享网页额度。
 
 服务器保留 Token 哈希用于认证，并用 Fernet 加密保存可恢复副本。首次签发时在数据库旁自动生成 `<数据库文件名>.mcp.key`（仅服务用户可读写）；Docker 默认与数据库一起保存在 `/data` 持久卷中。备份及恢复必须同时保留数据库和此密钥，不要提交密钥到版本库。旧版 Token 或缺少密钥时不会自动失效，但无法恢复显示，用户可主动重新生成；重新生成只轮换该用户的个人 Token，不影响 OAuth 授权。改密码、停用账号或撤销全部 MCP 授权会同时清除相关可恢复副本。
+
+## 安全维护
+
+更新后核对[安全审查记录](../docs/SECURITY_REVIEW.md)。Compose 为应用和代理配置日志轮转，每个容器最多保留 3 个 10 MB 日志文件。首次应用此 Compose 变更需运行当前部署使用的完整 `docker compose ... up -d` 命令，`update.sh` 只更新应用容器，不会重建代理。

@@ -9,16 +9,11 @@ from starlette.routing import Mount, Route
 
 from .config import Settings
 from gpt.oauth import OAuth
-from gpt.server import build_server
+from gpt.server import bearer, build_server
 from .store import Store
 from .service import SearchService
 from .upstream import Upstream
 from web.app import Web
-
-
-def bearer(headers):
-    raw = headers.get('authorization', '')
-    return raw[7:] if raw.lower().startswith('bearer ') else ''
 
 
 class Guard:
@@ -32,16 +27,24 @@ class Guard:
         headers = {k.decode('latin1').lower(): v.decode('latin1') for k, v in scope['headers']}
         path = scope['path']
         if path.rstrip('/') == '/mcp':
-            if not self.store.authenticate(bearer(headers), self.settings.resource):
+            user = self.store.authenticate(bearer(headers), self.settings.resource)
+            if not user:
                 response = JSONResponse({'error': '需要连接并登录资源搜索服务。'}, status_code=401,
                     headers={'WWW-Authenticate': f'Bearer resource_metadata="{self.settings.base_url}/.well-known/oauth-protected-resource", scope="search"',
                              'Cache-Control': 'no-store'})
                 return await response(scope, receive, send)
+            if not self.store.rate('mcp:' + str(user['id']), 120, 60):
+                return await JSONResponse({'error': 'rate_limit_exceeded'}, status_code=429,
+                    headers={'Retry-After': '60', 'Cache-Control': 'no-store'})(scope, receive, send)
         # Limit bodies before form parsing or JSON decoding, including chunked uploads.
-        if scope['method'] in ('POST', 'PUT', 'PATCH'):
+        if scope['method'] in ('POST', 'PUT', 'PATCH', 'DELETE'):
             body = bytearray()
+            deadline = asyncio.get_running_loop().time() + 15
             while True:
-                message = await receive()
+                try:
+                    message = await asyncio.wait_for(receive(), max(0, deadline - asyncio.get_running_loop().time()))
+                except asyncio.TimeoutError:
+                    return await JSONResponse({'error': 'request_timeout'}, status_code=408)(scope, receive, send)
                 if message['type'] == 'http.disconnect':
                     return
                 body.extend(message.get('body', b''))

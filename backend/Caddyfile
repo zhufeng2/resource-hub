@@ -1,8 +1,9 @@
 {$PUBLIC_BASE_URL} {
     header {
         Strict-Transport-Security "max-age=31536000"
-        X-Content-Type-Options "nosniff"
-        Referrer-Policy "no-referrer"
+        -Server
+        ?X-Content-Type-Options "nosniff"
+        ?Referrer-Policy "same-origin"
     }
     reverse_proxy app:8000
 }

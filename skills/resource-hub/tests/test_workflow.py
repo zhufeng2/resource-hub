@@ -30,7 +30,7 @@ class Workflow(unittest.TestCase):
         root = Path(self.tmp.name)
         self.patches = [patch.object(common,'CACHE_ROOT',root), patch.object(progress,'CACHE_ROOT',root),
                         patch.object(search,'CONFIG',root/'credentials.json'), patch.object(common,'CONFIG',root/'credentials.json'),
-                        patch.dict(os.environ, {}, clear=True)]
+                        patch.dict(os.environ, {'PANSOU_BASE_URL': 'https://example.org'}, clear=True)]
         for p in self.patches: p.start()
     def tearDown(self):
         for p in reversed(self.patches): p.stop()

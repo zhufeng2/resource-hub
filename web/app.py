@@ -12,8 +12,8 @@ from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from backend.backend import SearchFailure
-from backend.service import validate_preferences
+from backend.errors import SearchFailure
+from backend.service import checkable_url, validate_preferences
 from backend.store import digest
 from backend.upstream import PROVIDERS
 
@@ -190,6 +190,8 @@ class Web:
         if not isinstance(username, str):
             raise WebError('账号格式不正确。')
         limit = data.get('daily_limit', self.settings.default_limit)
+        if 'is_admin' in data and type(data['is_admin']) is not bool:
+            raise WebError('账号状态格式不正确。')
         if type(limit) is not int:
             raise WebError('每日额度必须是整数。')
         if request.method == 'POST':
@@ -248,10 +250,12 @@ class Web:
             return reply({'success': True})
         if action == 'update_config':
             url = data.get('base_url', '')
+            if not isinstance(url, str):
+                raise WebError('站点地址格式不正确。')
             parts = urlsplit(url)
             allowed = set(os.getenv('SOURCE_SITE_HOSTS', '').split(','))
             if (not user['is_admin'] or parts.scheme != 'https' or parts.hostname not in allowed
-                    or parts.username or parts.password or parts.query or parts.fragment):
+                    or parts.username or parts.password or parts.query or parts.fragment or parts.port not in (None, 443)):
                 raise WebError('此站点地址未获管理员允许。', 403)
         if action == 'test_search':
             async def execute(query, timeout):
@@ -294,17 +298,11 @@ class Web:
         rows = {r['url']: r for r in page['results']}
         if any(url not in rows for url in urls):
             raise WebError('只能检测本次搜索返回的链接。', 403)
-        hosts = {'quark': {'pan.quark.cn'}, 'baidu': {'pan.baidu.com', 'yun.baidu.com'},
-                 'aliyun': {'alipan.com', 'www.alipan.com', 'www.aliyundrive.com'},
-                 'tianyi': {'cloud.189.cn'}, 'uc': {'drive.uc.cn'}, '115': {'115.com'},
-                 '123': {'www.123pan.com', 'www.123684.com', 'www.123865.com'}}
         results = [{'state': 'unknown', 'summary': '暂不支持检测此链接。'} for _ in urls]
         items, indices = [], []
         for index, url in enumerate(urls):
-            parts = urlsplit(url)
             row = rows[url]
-            if (parts.scheme == 'https' and parts.hostname in hosts.get(row['cloud_type'], set())
-                    and not parts.username and not parts.password and parts.port in (None, 443)):
+            if checkable_url(url, row['cloud_type']):
                 items.append({'url': url, 'disk_type': row['cloud_type'], 'password': row.get('password', '')})
                 indices.append(index)
         if items:

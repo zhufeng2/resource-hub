@@ -6,11 +6,15 @@ services:
     env_file: .env
     environment:
       DATABASE_PATH: /data/service.sqlite3
-      RESOURCE_HUB_CACHE: /data/cache
     volumes:
       - app_data:/data
     expose:
       - "8000"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
     init: true
     read_only: true
@@ -39,6 +43,11 @@ services:
     depends_on:
       app:
         condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
 
 volumes:

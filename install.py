@@ -42,7 +42,8 @@ def main():
     for name in NAMES:
         # Merge preserves the official CLI and device-local account state during sync.
         shutil.copytree(source / name, destination / name, dirs_exist_ok=True,
-                        ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '.DS_Store'))
+                        ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '.DS_Store', '.cache',
+                            'node_modules', '.env*', 'credentials.json', 'config.json', '*.sqlite*', '*.db', '*.mcp.key'))
         print(f'Installed: {destination / name}')
     print('Open a new chat to load the skills. Connect Resource Hub MCP in your assistant and authorize Quark on this device.')
 

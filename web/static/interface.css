@@ -58,27 +58,9 @@ body.settings-open { overflow:hidden; }
 .settings-dialog .settings-heading p { font-size:12px; }
 @keyframes settingsPageIn { from { opacity:.6; transform:translateY(6px); } to { opacity:1; transform:none; } }
 
-/* Keep a little desktop motion, with only two low-contrast composited layers. */
-.ambient { height:100lvh; bottom:auto; contain:paint; transition:none; }
-.ambient::before, .ambient::after { content:none; }
-.ambient > :not(.ambient-aurora):not(.ambient-grid) { display:none; }
-.ambient-aurora {
-  width:min(1050px,120vw); top:40%; opacity:.65;
-  animation:ambientDrift 40s ease-in-out infinite alternate;
-}
-.ambient-grid { inset:0; animation:none; will-change:auto; opacity:.2; }
-body:not(.has-results) .search-center::before { animation:none; opacity:.55; }
-@keyframes ambientDrift {
-  from { transform:translate(-53%,-50%); }
-  to { transform:translate(-47%,-46%); }
-}
 
 @media(max-width:760px), (hover:none) {
-  /* Mobile keyboards change the visual viewport; large-viewport backgrounds stay fixed. */
-  .ambient { background:radial-gradient(ellipse at 30% 25%,var(--aurora-a),transparent 65%); }
-  .ambient > * { display:none; }
-  .ambient, body.has-results .ambient { opacity:1; }
-  body:not(.has-results) .search-center::before { content:none; }
+
   .hero-symbol, .hero-symbol i, .hero-inner h1, .hero-inner p { animation:none; }
   body.has-results .header { background:var(--bg); -webkit-backdrop-filter:none; backdrop-filter:none; }
   dialog::backdrop { -webkit-backdrop-filter:none; backdrop-filter:none; }
@@ -109,6 +91,6 @@ body:not(.has-results) .search-center::before { animation:none; opacity:.55; }
 }
 
 @media(prefers-reduced-motion:reduce) {
-  .settings-dialog[open], .ambient-aurora { animation:none; }
-  .ambient-aurora { will-change:auto; }
+  .settings-dialog[open]{ animation:none; }
+
 }

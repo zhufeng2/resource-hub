@@ -6,7 +6,7 @@ import secrets
 import time
 from urllib.parse import urlsplit
 
-from .backend import SearchFailure
+from .errors import SearchFailure
 
 CLOUDS = {'quark', 'baidu', 'aliyun', 'guangya', 'tianyi', '115', 'xunlei', 'uc',
           'mobile', 'pikpak', '123', 'magnet', 'ed2k', 'others'}
@@ -14,6 +14,15 @@ CHECK_HOSTS = {'quark': {'pan.quark.cn'}, 'baidu': {'pan.baidu.com', 'yun.baidu.
                'aliyun': {'alipan.com', 'www.alipan.com', 'www.aliyundrive.com'},
                'tianyi': {'cloud.189.cn'}, 'uc': {'drive.uc.cn'}, '115': {'115.com'},
                '123': {'www.123pan.com', 'www.123684.com', 'www.123865.com'}}
+
+
+def checkable_url(url, cloud):
+    try:
+        parts = urlsplit(url)
+        return (parts.scheme == 'https' and parts.hostname in CHECK_HOSTS.get(cloud, set())
+                and not parts.username and not parts.password and parts.port in (None, 443))
+    except ValueError:
+        return False
 
 
 def validate_preferences(value):
@@ -73,9 +82,7 @@ class SearchService:
             for index, row in enumerate(rows[:limit]):
                 url = str(row.get('url') or '')
                 cloud = str(row.get('cloud_type') or '')
-                parts = urlsplit(url)
-                if (parts.scheme == 'https' and parts.hostname in CHECK_HOSTS.get(cloud, set())
-                        and not parts.username and not parts.password and parts.port in (None, 443)):
+                if checkable_url(url, cloud):
                     candidates.append({'url': url, 'disk_type': cloud, 'password': row.get('password', '')})
                     indices.append(index)
         if not candidates:

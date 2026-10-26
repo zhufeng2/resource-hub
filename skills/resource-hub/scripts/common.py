@@ -9,7 +9,6 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-DEFAULT_URL = 'https://pan.sysscitech.com'
 CONFIG = Path.home() / '.config/pansou/credentials.json'
 CACHE_ROOT = Path(os.getenv('RESOURCE_HUB_CACHE', str(Path.home() / '.cache/resource-hub')))
 
@@ -29,7 +28,7 @@ def load_config():
 
 def base_url():
     """取 PanSou 服务地址；必须是不含凭据、查询或片段的 HTTPS 地址。"""
-    base = (os.getenv('PANSOU_BASE_URL') or load_config().get('base_url') or DEFAULT_URL).rstrip('/')
+    base = (os.getenv('PANSOU_BASE_URL') or load_config().get('base_url') or '').rstrip('/')
     parts = urlsplit(base)
     if (parts.scheme != 'https' or not parts.hostname or parts.username or parts.password
             or parts.query or parts.fragment):
@@ -46,7 +45,10 @@ def request(url, payload=None, headers=None, timeout=60):
     data = None if payload is None else json.dumps(payload).encode()
     req = Request(url, data=data, headers=merged)
     with build_opener(NoRedirect()).open(req, timeout=timeout) as response:
-        parsed = json.load(response)
+        content = response.read(4_000_001)
+        if len(content) > 4_000_000:
+            raise ValueError('response_invalid: 响应超过大小限制')
+        parsed = json.loads(content)
     if not isinstance(parsed, dict):
         raise ValueError('response_invalid: 预期 JSON 对象')
     return parsed
@@ -82,6 +84,7 @@ def cache_get(path, ttl):
 
 
 def cache_put(path, payload):
+    tmp = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as stream:
@@ -91,3 +94,6 @@ def cache_put(path, payload):
         os.replace(tmp, path)
     except OSError:
         pass
+    finally:
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)

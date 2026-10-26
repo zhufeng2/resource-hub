@@ -484,4 +484,4 @@ class Store:
             db.execute('DELETE FROM limits WHERE started<?', (now - 86400,))
             db.execute('DELETE FROM searches WHERE created<?', (now - 31 * 86400,))
             # Keep current-day quota counts but discard old search content after one day.
-            db.execute('UPDATE searches SET result=NULL WHERE created<?', (now - 86400,))
+            db.execute("UPDATE searches SET query='',result=NULL WHERE created<? AND (query<>'' OR result IS NOT NULL)", (now - 86400,))
