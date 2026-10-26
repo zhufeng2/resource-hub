@@ -2,23 +2,23 @@
 
 系列请求固定一个 task 名称；不同任务名称隔离覆盖清单，近期同一分享的核验结果仍可复用。任务保存在本机缓存目录的 progress.sqlite3，不存账号密码或访问 token。删除该文件会丢失任务进度；不会操作网盘。旧版结果不会自动导入，首次使用新版本需重新建立任务。
 
-## 搜索与接续
+## MCP 搜索与接续
+
+以同一任务名称在对话或工作区 JSON 记录覆盖清单和搜索进度：每个关键词保存 query、request_id、search_id、固定分页大小 20、下一页原始 offset、has_more，候选按 URL 去重，记录来源、提取码、内容核验和待办。不要保存 MCP Token、网页 Cookie 或分享访问令牌。
+
+搜索使用 MCP `search_resources`，翻页使用 `get_search_results`。初次搜索后的下一页 offset 为 20，此后按固定窗口加 20；剔除失效链接会缩短返回列表，不能按列表长度递增 offset。空页但 has_more=true 时继续下一窗口。超时重试同一搜索复用 request_id；换词或重新搜索生成新 ID。读取已有结果不扣新额度，记录有效期为 24 小时。
+
+MCP 搜索记录不会自动导入旧 progress.sqlite3 候选队列；不要执行旧 `resource.py search` 来接续 MCP 任务。可以在任务 JSON 中保留全部搜索与分页信息，使用下方本地 progress 命令单独维护覆盖、官方核验和实际保存证据。该命令不调用搜索接口。
 
 ```sh
-python3 "<skill>/scripts/resource.py" search '正式名称' --task '本次系列补齐' --search-only
-python3 "<skill>/scripts/resource.py" search '英文别名' --task '本次系列补齐' --search-only
-python3 "<skill>/scripts/resource.py" search '正式名称' --task '本次系列补齐'
-python3 "<skill>/scripts/resource.py" search '正式名称' --task '本次系列补齐' --recheck
 python3 "<skill>/scripts/resource.py" progress --task '本次系列补齐'
 ```
 
-有 pending_urls 时继续同一任务；有 official_pending_urls 时使用夸克官方 share-detail，再记录结果。metadata_observed 只表示读到文件，不表示匹配。查完已有候选仍有缺项时换有依据的别名；不要无限重复不变的请求。
-
-服务不提供最终状态字段时 completeness=unknown。不能根据结果数量稳定或某个缓存超时推断完整；客户端只合并实际拿到的结果。来源过滤异常需结合后端日志排查，不能通过客户端承诺修复。
+已核验目录复用其证据；有疑问或待展开目录使用夸克官方 share-detail，再记录结果。metadata_observed 只表示读到文件，不表示匹配。已有候选仍无法满足目标时才查有依据的别名；不因缓存超时或结果数量稳定推断全网完整。
 
 ## 记录覆盖、转存与官方核验
 
-将实际证据整理成 JSON 文件，通过以下命令更新。coverage 和 saved 是整个数组的替换，先读取并保留已有条目；verified 逐条更新核验缓存。查询候选合并是事务操作，不会因并发搜索丢失别名结果。核验流程串行运行。
+将实际证据整理成 JSON 文件，通过以下命令更新。coverage 和 saved 是整个数组的替换，先读取并保留已有条目；verified 逐条更新核验缓存。MCP 查询及分页信息保存在任务 JSON 中，不要传入 --record；该参数仅接受 coverage、saved、verified。
 
 ```sh
 python3 "<skill>/scripts/resource.py" progress --task '本次系列补齐' --record '本地记录.json'
@@ -45,7 +45,6 @@ content_status 可为 metadata_observed、empty、unavailable。empty 要求完�
 
 ```sh
 python3 "<skill>/tests/test_workflow.py" -v
-python3 "<skill>/scripts/resource.py" auth-test
 ```
 
-离线测试使用临时目录与模拟响应，不读取真实凭据、不操作网盘。auth-test 会读取本机配置，绕过旧登录缓存并做一次真实搜索权限验证；不会转存文件。新配置验证成功与文件可播放是不同结论。
+离线测试覆盖保留脚本的兼容性，使用临时目录与模拟响应，不读取真实凭据、不操作网盘。MCP 连接通过 `get_quota` 验证；搜索链路需要一次真实 `search_resources`，成功会计次，再用返回的 search_id 验证读取。不要运行旧 auth-test 检查 MCP。连接成功、搜索成功、内容匹配和转存成功分别报告。

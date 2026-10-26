@@ -44,7 +44,7 @@ def main():
         shutil.copytree(source / name, destination / name, dirs_exist_ok=True,
                         ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '.DS_Store'))
         print(f'Installed: {destination / name}')
-    print('Open a new chat to load the skills. Configure search access and authorize Quark on this device.')
+    print('Open a new chat to load the skills. Connect Resource Hub MCP in your assistant and authorize Quark on this device.')
 
 
 if __name__ == '__main__':

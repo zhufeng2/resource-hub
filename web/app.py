@@ -70,6 +70,16 @@ class Web:
             db.execute('DELETE FROM codes WHERE user_id=?', (user['id'],))
         return reply({'ok': True})
 
+    async def mcp_token(self, request):
+        user = self.user(request, write=request.method != 'GET')
+        data = {'mcp_url': self.settings.resource}
+        if request.method == 'POST':
+            # Always derive ownership from the session; never accept a target username.
+            data['token'] = self.store.issue_mcp_token(user['username'], self.settings.resource)
+        elif request.method == 'DELETE':
+            self.store.revoke_mcp_token(user['username'])
+        return reply({**data, **self.store.mcp_token_status(user['id'], self.settings.resource, reveal=True)})
+
     async def index(self, request):
         return FileResponse(STATIC / 'index.html', headers={
             'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff',
@@ -135,6 +145,13 @@ class Web:
     async def history(self, request):
         user = self.user(request)
         return reply({'items': self.store.recent(user['id'])})
+
+    async def delete_history(self, request):
+        user = self.user(request, write=True)
+        ids = self.store.delete_history(user['id'], request.path_params.get('id'))
+        if ids is None:
+            raise WebError('搜索记录不存在或已删除', 404)
+        return reply({'deleted_ids': ids, 'items': self.store.recent(user['id'])})
 
     async def preferences(self, request):
         user = self.user(request, write=True)
@@ -312,9 +329,12 @@ class Web:
         definitions = [('/', self.index, ['GET']), ('/profile', self.index, ['GET']), ('/api/session', self.session, ['GET']),
             ('/api/login', self.login, ['POST']), ('/api/logout', self.logout, ['POST']),
             ('/api/search', self.search, ['POST']), ('/api/results/{id}', self.results, ['GET']),
-            ('/api/history', self.history, ['GET']), ('/api/preferences', self.preferences, ['PUT']),
+            ('/api/history', self.history, ['GET']), ('/api/history', self.delete_history, ['DELETE']),
+            ('/api/history/{id}', self.delete_history, ['DELETE']),
+            ('/api/preferences', self.preferences, ['PUT']),
             ('/api/catalog', self.catalog, ['GET']), ('/api/password', self.password, ['POST']),
             ('/api/connections/revoke', self.revoke_connections, ['POST']),
+            ('/api/mcp-token', self.mcp_token, ['GET', 'POST', 'DELETE']),
             ('/api/users', self.users, ['GET', 'POST', 'PATCH']),
             ('/api/bindings', self.bindings, ['GET', 'POST']),
             ('/api/bindings/{id}', self.binding_action, ['POST']), ('/api/check', self.check_links, ['POST'])]

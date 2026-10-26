@@ -12,6 +12,8 @@ import unicodedata
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
+from cryptography.fernet import Fernet, InvalidToken
+
 SHANGHAI = timezone(timedelta(hours=8))
 
 
@@ -60,6 +62,10 @@ class Store:
                 CREATE TABLE IF NOT EXISTS tokens (
                     hash TEXT PRIMARY KEY, kind TEXT NOT NULL, user_id INTEGER NOT NULL,
                     client_id TEXT NOT NULL, resource TEXT NOT NULL, family TEXT NOT NULL, expires REAL NOT NULL);
+                CREATE TABLE IF NOT EXISTS mcp_token_secrets (
+                    hash TEXT PRIMARY KEY, ciphertext BLOB NOT NULL);
+                CREATE TRIGGER IF NOT EXISTS delete_mcp_token_secret AFTER DELETE ON tokens
+                    BEGIN DELETE FROM mcp_token_secrets WHERE hash=OLD.hash; END;
                 CREATE TABLE IF NOT EXISTS limits (
                     key TEXT PRIMARY KEY, started REAL NOT NULL, count INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS searches (
@@ -174,6 +180,18 @@ class Store:
                 db.execute('UPDATE preferences SET value=? WHERE user_id=?', (json.dumps(migrate), user_id))
         return {**defaults, **(saved or {})}
 
+    @staticmethod
+    def history_query(value):
+        try:
+            decoded = json.loads(value)
+            return decoded.get('query', '') if isinstance(decoded, dict) else value
+        except (ValueError, TypeError):
+            return value
+
+    @staticmethod
+    def history_key(query):
+        return ' '.join(unicodedata.normalize('NFKC', query).split()).casefold()
+
     def recent(self, user_id):
         items, seen = [], set()
         with self.connection() as db:
@@ -181,12 +199,8 @@ class Store:
                 AND status='done' AND created>? AND result IS NOT NULL ORDER BY created DESC,id DESC""",
                 (user_id, time.time() - 86400))
             for row in rows:
-                try:
-                    value = json.loads(row['query'])
-                    query = value.get('query', '') if isinstance(value, dict) else row['query']
-                except (ValueError, TypeError):
-                    query = row['query']
-                key = ' '.join(unicodedata.normalize('NFKC', query).split()).casefold()
+                query = self.history_query(row['query'])
+                key = self.history_key(query)
                 if not key or key in seen:
                     continue
                 seen.add(key)
@@ -194,6 +208,24 @@ class Store:
                 if len(items) == 12:
                     break
         return items
+
+    def delete_history(self, user_id, search_id=None):
+        with self.connection(True) as db:
+            rows = db.execute("""SELECT id,query FROM searches WHERE user_id=?
+                AND status='done' AND query<>''""", (user_id,)).fetchall()
+            if search_id is not None:
+                target = next((row for row in rows if row['id'] == search_id), None)
+                if target is None:
+                    return None
+                # History groups repeated keywords; remove the whole displayed group.
+                key = self.history_key(self.history_query(target['query']))
+                rows = [row for row in rows if self.history_key(self.history_query(row['query'])) == key]
+            ids = [row['id'] for row in rows]
+            # Searches also form the quota and request-id ledger. Erase content,
+            # retaining completed rows so deletion cannot refund or bypass quota.
+            db.executemany("UPDATE searches SET query='',result=NULL WHERE user_id=? AND id=?",
+                           ((user_id, search_id) for search_id in ids))
+        return ids
 
     def bindings(self, user_id):
         with self.connection() as db:
@@ -314,6 +346,35 @@ class Store:
                 (digest(token), time.time(), resource)).fetchone()
             return dict(row) if row else None
 
+    def mcp_token_cipher(self, create=False):
+        key_path = self.path.with_name(self.path.name + '.mcp.key')
+        if create and not key_path.exists():
+            # Callers hold the database write lock when creating the shared key.
+            fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(Fernet.generate_key())
+                stream.flush()
+                os.fsync(stream.fileno())
+        return Fernet(key_path.read_bytes())
+
+    def mcp_token_status(self, user_id, resource, reveal=False):
+        with self.connection() as db:
+            row = db.execute("""SELECT t.hash,t.expires,s.ciphertext FROM tokens t
+                LEFT JOIN mcp_token_secrets s ON s.hash=t.hash WHERE t.user_id=? AND t.resource=?
+                AND t.client_id='dsh-cli' AND t.kind='access' AND t.expires>? ORDER BY t.expires DESC LIMIT 1""",
+                (user_id, resource, time.time())).fetchone()
+        value = {'active': bool(row), 'expires_at': row['expires'] if row else None}
+        if reveal:
+            value['token'] = None
+            if row and row['ciphertext']:
+                try:
+                    raw = self.mcp_token_cipher().decrypt(row['ciphertext']).decode()
+                    if hmac.compare_digest(digest(raw), row['hash']):
+                        value['token'] = raw
+                except (InvalidToken, OSError, ValueError):
+                    pass  # Hash-only legacy tokens or lost keys require explicit regeneration.
+        return value
+
     def issue_mcp_token(self, username, resource, days=365):
         """Issue a long-lived Bearer token for MCP clients that cannot do OAuth."""
         if not 1 <= days <= 3650:
@@ -323,11 +384,13 @@ class Store:
             row = db.execute('SELECT id FROM users WHERE username=? AND enabled=1', (username,)).fetchone()
             if not row:
                 raise ValueError('账号不存在或已停用')
+            encrypted = self.mcp_token_cipher(create=True).encrypt(raw.encode())
             # One active CLI token per account; reissuing rotates the old one.
             db.execute("DELETE FROM tokens WHERE user_id=? AND client_id='dsh-cli'", (row['id'],))
             db.execute('INSERT INTO tokens VALUES(?,?,?,?,?,?,?)', (
                 digest(raw), 'access', row['id'], 'dsh-cli', resource,
                 secrets.token_urlsafe(24), time.time() + days * 86400))
+            db.execute('INSERT INTO mcp_token_secrets VALUES(?,?)', (digest(raw), encrypted))
         return raw
 
     def revoke_mcp_token(self, username):

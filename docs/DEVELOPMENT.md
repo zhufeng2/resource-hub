@@ -59,10 +59,12 @@ uvicorn backend.app:create_app --factory --host 127.0.0.1 --port 8000 --no-acces
 | `/api/login`、`/api/logout` | POST | 网页登录与退出 |
 | `/api/search` | POST | 创建搜索，接受 `query`、`request_id` 等字段 |
 | `/api/results/{id}` | GET | 读取已有结果 |
-| `/api/history` | GET | 当前账号的搜索记录 |
+| `/api/history` | GET / DELETE | 读取或清空当前账号的搜索记录 |
+| `/api/history/{id}` | DELETE | 删除该账号同一关键词的记录与已保存结果，不返还额度 |
 | `/api/preferences` | PUT | 更新设置 |
 | `/api/catalog` | GET | 上游启用的来源 |
 | `/api/bindings` | GET / POST | 搜索源账号列表与创建 |
+| `/api/mcp-token` | GET / POST / DELETE | 当前登录用户查看、生成或撤销个人 MCP Token；写操作要求 CSRF |
 | `/mcp` | MCP Streamable HTTP | 助手工具入口 |
 | `/healthz` | GET | 应用健康状态 |
 
@@ -99,9 +101,10 @@ node --check web/static/controls.js
 3. 搜索设置的打开、独立滚动、恢复默认、保存、配置导入导出。
 4. 弹窗 Escape 关闭、焦点返回和键盘操作，下拉菜单选项与原生值同步。
 5. 登录、退出、登录过期、额度不足、账户信息与个人主页各栏目。
-6. 手机菜单不透出背景文字，键盘打开后输入和保存按钮仍可访问。
-7. 页面中心线、横向溢出、长标题、长账号名及“减少动态效果”设置。
-8. 首页和授权页的 favicon、静态资源及控制台错误。
+6. 搜索记录标题打开结果、垃圾桶直接删除、清空确认与取消、首页同步和刷新后不再出现，确认其他账号及已用额度不受影响。
+7. 手机菜单不透出背景文字，键盘打开后输入和保存按钮仍可访问。
+8. 页面中心线、横向溢出、长标题、长账号名及“减少动态效果”设置。
+9. 首页和授权页的 favicon、静态资源及控制台错误。
 
 使用临时数据库和模拟上游进行反复验证，真实部署完成后再检查实际搜索源和登录回调。不要把开发账号、模拟结果或设备绝对路径写入公开使用文档。
 

@@ -25,18 +25,18 @@ https://pan.sysscitech.com/mcp
 
 ChatGPT 可按以上流程连接。管理员需要将客户端显示的准确回调地址配置到 `OAUTH_REDIRECT_URIS`。本服务支持动态客户端注册、Authorization Code + PKCE S256，Token 端点认证方式为 `none`，授权范围为 `search`。
 
-授权页过期、已使用或 Cookie 无效时，从客户端重新发起连接，不要重复提交旧页面。网页“个人主页 → 安全与连接”可撤销 ChatGPT 授权。
+授权页过期、已使用或 Cookie 无效时，从客户端重新发起连接，不要重复提交旧页面。OAuth 连接仍处于开发阶段；当前网页主要提供通用 MCP Token 管理。
 
 ## Bearer Token 连接
 
-适用于支持 Streamable HTTP 与自定义请求头的客户端。向管理员申请 MCP Token，在客户端配置：
+适用于支持 Streamable HTTP 与自定义请求头的客户端，不限于 ChatGPT。登录网页，进入“个人主页 → 安全与连接 → MCP 服务”，生成当前账号的 Token，并复制 HTTP 地址与 Token。在客户端配置：
 
 ```text
 URL: https://你的域名/mcp
 Authorization: Bearer 你的MCP令牌
 ```
 
-该 Token 由 Resource Hub 签发，不能填入 `PANSOU_API_TOKEN`，也不能使用 PanSou 的 Token 替代。Token 按用户隔离并共享账号额度，重新签发会使旧 Token 失效。
+该 Token 由 Resource Hub 签发，不能填入 `PANSOU_API_TOKEN`，也不能使用 PanSou 的 Token 替代。Token 按用户隔离并共享账号额度，默认有效期 365 天。登录后可随时显示和复制自己的 Token；服务器加密保存可恢复副本，不在网页本地存储中持久化。旧版仅有哈希的 Token 仍能认证，但无法显示，需主动重新生成一次。重新生成会使原 Token 立即失效，客户端需更新配置；单独撤销 Token 不影响 OAuth。
 
 ### DeepSeek Harness 配置示例
 
@@ -66,7 +66,7 @@ docker compose --project-directory backend --env-file backend/.env -f backend/co
 docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app python -m backend.manage revoke-mcp-token alice
 ```
 
-签发前账号必须已存在。Token 只显示一次，妥善交付给对应用户；吊销后客户端需重新配置。OAuth 授权与长期 MCP Token 使用不同管理入口，停用账号或重置密码会撤销已有授权。
+签发前账号必须已存在。命令行签发的 Token 也可由对应用户登录网页后查看和复制；吊销后客户端需重新配置。OAuth 授权与长期 MCP Token 使用不同管理入口，停用账号或重置密码会撤销已有授权。
 
 ## 工具
 
@@ -104,6 +104,6 @@ docker compose --project-directory backend --env-file backend/.env -f backend/co
 | 授权页提示过期 | 从客户端重新添加或发起连接，使用新授权页面 |
 | 回调失败 | 管理员检查准确回调地址、站点域名及反向代理 |
 | 额度不足 | 调用 `get_quota`，等待重置或联系管理员 |
-| 查询已有结果失败 | 确认是同一账号、结果未超过 24 小时 |
+| 查询已有结果失败 | 确认是同一账号、结果未超过 24 小时且未在网页中删除 |
 
 服务端实现位于 `server.py` 和 `oauth.py`，开发与测试见[开发指南](../docs/DEVELOPMENT.md)。

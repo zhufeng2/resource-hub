@@ -9,7 +9,7 @@
 - Python 3.10 或更新版本。
 - 使用夸克官方工具时需要 Node.js 16 或更新版本，安装脚本会检查环境。
 - 可以加载本地 Skill 的助手。
-- 可用的 PanSou 兼容搜索 API 地址和凭据；涉及转存时还需夸克网盘账号。
+- 已连接 Resource Hub MCP 的助手及站点账号；涉及目录核验或转存时还需夸克网盘账号。
 
 ## 安装
 
@@ -29,26 +29,15 @@ python3 install.py --skills-dir /path/to/skills
 
 安装后，在助手中新建对话以加载技能。Windows 可根据环境将 `python3` 替换为 `python` 或 `py -3`，路径含空格时加引号。
 
-## 配置搜索服务
+## 连接 MCP 搜索服务
 
-向搜索服务提供方获取 PanSou API 地址和凭据，在终端交互配置。以下命令适用于默认安装路径：
+在当前助手中连接 Resource Hub MCP。项目测试站入口为 `https://pan.sysscitech.com/mcp`，自建站点使用自己的域名加 `/mcp`。按客户端支持的方式完成 OAuth 授权或配置管理员签发的 MCP Bearer Token，具体见 [MCP 接入指南](../gpt/README.md)。凭据仅在客户端授权界面或本机配置中填写，不发送到聊天。
 
-```bash
-python3 ~/.codex/skills/resource-hub/scripts/resource.py setup
-python3 ~/.codex/skills/resource-hub/scripts/resource.py auth-test
-```
+连接后调用 `get_quota` 免费验证认证与额度；实际搜索用 `search_resources`，后续翻页用 `get_search_results`。每次成功新搜索计次，零结果也计次；翻页不扣新额度。连接检查成功不代表上游搜索已成功。
 
-使用自定义安装目录时替换路径。`setup` 保存配置，`auth-test` 验证登录和搜索权限；保存配置本身不代表已连接成功。
+本地 Skill 不再需要 PanSou 地址、账号密码或 `PANSOU_*` 环境变量。内部上游凭据由服务器维护；MCP 不可用时提示重新连接，不回退旧 PanSou 地址。旧搜索脚本保留给兼容调用方，不能用其 setup/auth-test 验证新站 MCP。已有本机 PanSou 配置不会自动删除。
 
-也可由运行环境注入：
-
-| 变量 | 用途 |
-| --- | --- |
-| `PANSOU_BASE_URL` | 提供方给出的 PanSou 兼容 API 地址 |
-| `PANSOU_USERNAME` / `PANSOU_PASSWORD` | 配套账号密码，必须成对配置 |
-| `PANSOU_API_TOKEN` | 固定 API Token，配置后优先于账号密码 |
-
-Resource Hub 测试站的网页账号和 MCP Token 不能直接作为 PanSou 凭据使用。安装后请检查并配置实际可用的上游地址，不依赖脚本内置地址。完整参数见 [resource-hub 技能规范](../skills/resource-hub/SKILL.md)。
+Skill 的核验、筛选和转存规则见 [resource-hub 技能规范](../skills/resource-hub/SKILL.md)。
 
 ## 授权夸克网盘
 
@@ -88,9 +77,9 @@ python3 install.py --update
 
 ## 常见问题
 
-**已经登录网页，为什么本地还要求配置？**
+**已经登录网页，为什么助手还要求连接？**
 
-网页和 MCP 使用 Resource Hub 账号，本地搜索使用 PanSou 凭据，夸克操作使用网盘授权，三者分别配置。
+本地 Skill 搜索使用当前助手已连接的 Resource Hub MCP；网页登录不会自动授权 MCP，需在助手中完成连接。分享目录核验及网盘操作另用夸克官方授权。
 
 **搜索成功但不能转存？**
 

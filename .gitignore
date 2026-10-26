@@ -9,6 +9,7 @@ credentials.json
 config.json
 *.sqlite*
 *.db
+*.mcp.key
 *.jsonl
 .cache/
 cache/

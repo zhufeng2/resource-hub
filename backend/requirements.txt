@@ -1,3 +1,4 @@
 # Only needed for the optional online service. Local skills use their existing dependencies.
 mcp==1.27.0
 uvicorn>=0.35,<0.47
+cryptography>=46,<51

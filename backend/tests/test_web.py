@@ -11,6 +11,7 @@ from . import test_service as fixtures
 from .test_service import BASE, PASSWORD
 from backend.app import create_app
 from backend.upstream import Upstream
+from backend.store import Store, digest
 
 
 class FakeUpstream:
@@ -103,6 +104,75 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/connections/revoke', json={}, headers=headers).status_code, 200)
         self.assertIsNone(self.store.authenticate(tokens['access_token'], self.settings.resource))
 
+    def test_delete_history_requires_owner_and_csrf_and_erases_content(self):
+        self.assertEqual(self.client.delete('/api/history').status_code, 401)
+        self.assertEqual(self.client.delete('/api/history/missing').status_code, 401)
+        headers = self.web_login()
+        result = self.client.post('/api/search', json={'query': 'private history', 'request_id': 'delete-one'}, headers=headers).json()
+        search_id = result['search_id']
+        self.assertEqual(self.client.delete('/api/history/' + search_id).status_code, 403)
+        self.assertEqual(self.client.delete('/api/history/' + search_id, headers={
+            **headers, 'Origin': 'https://other.example'}).status_code, 403)
+        other_headers = self.web_login('bob')
+        self.assertEqual(self.client.delete('/api/history/' + search_id, headers=other_headers).status_code, 404)
+        self.assertIsNotNone(self.store.search(self.store.login('alice', PASSWORD)['id'], search_id)['result'])
+        headers = self.web_login()
+        before = self.client.get('/api/session').json()['quota']
+        deleted = self.client.delete('/api/history/' + search_id, headers=headers)
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+        self.assertEqual(deleted.json(), {'deleted_ids': [search_id], 'items': []})
+        self.assertEqual(self.client.get('/api/session').json()['quota'], before)
+        self.assertEqual(self.client.get('/api/results/' + search_id).json()['error'], 'search_expired_or_not_found')
+        self.assertEqual(self.client.delete('/api/history/' + search_id, headers=headers).status_code, 404)
+        row = self.store.search(self.store.login('alice', PASSWORD)['id'], search_id)
+        self.assertEqual(row['query'], '')
+        self.assertIsNone(row['result'])
+        tokens, _, _ = self.login()
+        self.assertEqual(self.tool(tokens['access_token'], 'get_search_results', {'search_id': search_id})['error'],
+                         'search_expired_or_not_found')
+
+    def test_delete_history_removes_duplicate_keywords_without_refunding_quota(self):
+        self.store.change_user('alice', is_admin=False, limit=3)
+        headers = self.web_login()
+        results = []
+        for index, query in enumerate(('Ｆｏｏ  BAR', 'foo bar', 'keep')):
+            results.append(self.client.post('/api/search', json={
+                'query': query, 'request_id': 'delete-group-' + str(index)}, headers=headers).json())
+        self.assertEqual(len(self.client.get('/api/history').json()['items']), 2)
+        deleted = self.client.delete('/api/history/' + results[1]['search_id'], headers=headers).json()
+        self.assertEqual(set(deleted['deleted_ids']), {results[0]['search_id'], results[1]['search_id']})
+        self.assertEqual([item['query'] for item in deleted['items']], ['keep'])
+        backend_calls = len(self.calls)
+        replay = self.client.post('/api/search', json={
+            'query': 'foo bar', 'request_id': 'delete-group-1'}, headers=headers).json()
+        self.assertEqual(replay['error'], 'request_id_conflict')
+        self.assertEqual(len(self.calls), backend_calls)
+        blocked = self.client.post('/api/search', json={'query': 'new'}, headers=headers)
+        self.assertEqual(blocked.status_code, 429)
+        self.assertEqual(blocked.json()['quota']['used'], 3)
+        self.assertEqual(blocked.json()['quota']['remaining'], 0)
+
+    def test_clear_history_preserves_other_users_and_pending_searches(self):
+        other_headers = self.web_login('bob')
+        other = self.client.post('/api/search', json={'query': 'other user'}, headers=other_headers).json()
+        headers = self.web_login()
+        result = self.client.post('/api/search', json={'query': 'own search'}, headers=headers).json()
+        user_id = self.store.login('alice', PASSWORD)['id']
+        pending, _ = self.store.reserve(user_id, 'still-running', 'pending keyword')
+        before = self.store.quota(user_id)
+        self.assertEqual(self.client.delete('/api/history').status_code, 403)
+        cleared = self.client.delete('/api/history', headers=headers)
+        self.assertEqual(cleared.status_code, 200)
+        self.assertEqual(cleared.json(), {'deleted_ids': [result['search_id']], 'items': []})
+        self.assertEqual(self.client.delete('/api/history', headers=headers).json()['deleted_ids'], [])
+        self.assertEqual(self.store.quota(user_id), before)
+        with self.store.connection() as db:
+            self.assertEqual(db.execute('SELECT status,query FROM searches WHERE id=?', (pending['id'],)).fetchone()['query'],
+                             'pending keyword')
+        self.web_login('bob')
+        self.assertEqual(self.client.get('/api/history').json()['items'][0]['id'], other['search_id'])
+        self.assertIn('results', self.client.get('/api/results/' + other['search_id']).json())
+
     def test_admin_quota_is_unlimited(self):
         self.store.change_user('admin', limit=0)
         headers = self.web_login('admin')
@@ -135,10 +205,83 @@ class WebTests(unittest.TestCase):
     def test_password_change_revokes_web_and_mcp_sessions(self):
         headers = self.web_login()
         tokens, _, _ = self.login()
+        personal = self.client.post('/api/mcp-token', headers=headers).json()['token']
         result = self.client.post('/api/password', json={'current_password': PASSWORD, 'password': 'new-long-password-2026'}, headers=headers)
         self.assertEqual(result.status_code, 200, result.text)
         self.assertEqual(self.client.get('/api/history').status_code, 401)
         self.assertIsNone(self.store.authenticate(tokens['access_token'], self.settings.resource))
+        self.assertIsNone(self.store.authenticate(personal, self.settings.resource))
+        with self.store.connection() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM mcp_token_secrets').fetchone()[0], 0)
+
+    def test_personal_mcp_token_is_session_owned_and_shares_quota(self):
+        for method in ('GET', 'POST', 'DELETE'):
+            self.assertEqual(self.client.request(method, '/api/mcp-token').status_code, 401)
+        headers = self.web_login('bob')
+        for method in ('POST', 'DELETE'):
+            self.assertEqual(self.client.request(method, '/api/mcp-token').status_code, 403)
+            self.assertEqual(self.client.request(method, '/api/mcp-token', headers={
+                **headers, 'Origin': 'https://other.example'}).status_code, 403)
+        issued = self.client.post('/api/mcp-token', json={'username': 'alice'}, headers=headers)
+        self.assertEqual(issued.status_code, 200, issued.text)
+        self.assertEqual(issued.headers['cache-control'], 'no-store')
+        token = issued.json()['token']
+        self.assertEqual(self.store.authenticate(token, self.settings.resource)['username'], 'bob')
+        self.assertEqual(self.client.get('/api/mcp-token').json()['token'], token)
+        self.assertNotIn(token, self.client.get('/api/session').text)
+        # Encryption survives a Store restart without placing plaintext in SQLite.
+        reopened = Store(self.settings.database)
+        bob = self.store.login('bob', PASSWORD)
+        self.assertEqual(reopened.mcp_token_status(bob['id'], self.settings.resource, reveal=True)['token'], token)
+        with self.store.connection() as db:
+            encrypted = db.execute('SELECT ciphertext FROM mcp_token_secrets WHERE hash=?', (digest(token),)).fetchone()[0]
+            self.assertNotIn(token.encode(), encrypted)
+        self.assertEqual(self.tool(token, 'get_quota')['username'], 'bob')
+        result = self.tool(token, 'search_resources', {'query': 'test', 'request_id': 'personal-mcp'})
+        self.assertEqual(result['quota']['used'], 1)
+        self.assertEqual(self.client.get('/api/session').json()['quota']['used'], 1)
+        alice_headers = self.web_login('alice')
+        self.assertFalse(self.client.get('/api/mcp-token').json()['active'])
+        self.client.delete('/api/mcp-token', headers=alice_headers)
+        self.assertIsNotNone(self.store.authenticate(token, self.settings.resource))
+
+    def test_personal_mcp_rotation_and_revoke_preserve_oauth_until_revoke_all(self):
+        headers = self.web_login('bob')
+        oauth, _, _ = self.login('bob')
+        old = self.client.post('/api/mcp-token', headers=headers).json()['token']
+        new = self.client.post('/api/mcp-token', headers=headers).json()['token']
+        self.assertNotEqual(old, new)
+        self.assertIsNone(self.store.authenticate(old, self.settings.resource))
+        self.assertIsNotNone(self.store.authenticate(new, self.settings.resource))
+        self.assertIsNotNone(self.store.authenticate(oauth['access_token'], self.settings.resource))
+        self.assertFalse(self.client.delete('/api/mcp-token', headers=headers).json()['active'])
+        self.assertIsNone(self.store.authenticate(new, self.settings.resource))
+        self.assertIsNotNone(self.store.authenticate(oauth['access_token'], self.settings.resource))
+        token = self.client.post('/api/mcp-token', headers=headers).json()['token']
+        self.client.post('/api/connections/revoke', headers=headers)
+        self.assertIsNone(self.store.authenticate(token, self.settings.resource))
+        self.assertIsNone(self.store.authenticate(oauth['access_token'], self.settings.resource))
+        self.assertIsNone(self.client.get('/api/mcp-token').json()['token'])
+
+    def test_legacy_mcp_token_and_missing_key_require_explicit_regeneration(self):
+        headers = self.web_login('bob')
+        token = self.client.post('/api/mcp-token', headers=headers).json()['token']
+        with self.store.connection(True) as db:
+            db.execute('DELETE FROM mcp_token_secrets WHERE hash=?', (digest(token),))
+        legacy = self.client.get('/api/mcp-token').json()
+        self.assertTrue(legacy['active'])
+        self.assertIsNone(legacy['token'])
+        self.assertIsNotNone(self.store.authenticate(token, self.settings.resource))
+        token = self.client.post('/api/mcp-token', headers=headers).json()['token']
+        key_path = self.settings.database.with_name(self.settings.database.name + '.mcp.key')
+        key_path.unlink()
+        missing = self.client.get('/api/mcp-token').json()
+        self.assertTrue(missing['active'])
+        self.assertIsNone(missing['token'])
+        self.assertIsNotNone(self.store.authenticate(token, self.settings.resource))
+        new = self.client.post('/api/mcp-token', headers=headers).json()['token']
+        self.assertIsNone(self.store.authenticate(token, self.settings.resource))
+        self.assertEqual(self.client.get('/api/mcp-token').json()['token'], new)
 
     def test_static_page_and_check_reject_arbitrary_urls(self):
         response = self.client.get('/')
