@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>登录键盘测试</title>
+<link rel="stylesheet" href="/assets/style.css"><link rel="stylesheet" href="/assets/glass.css">
+<style>
+  body{padding:14px 14px 40px;font-size:14px;background:#f5f5f7}
+  h1{font-size:17px;margin:0 0 4px}
+  .lead{font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 10px}
+  .nav{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+  .nav button{min-height:34px;padding:6px 9px;border:1px solid var(--line);border-radius:9px;background:#fff;font-size:12px}
+  .nav button[aria-current=true]{background:#0071e3;color:#fff;border-color:transparent}
+  .case{position:relative;padding:16px;border:1px solid var(--line);border-radius:14px;background:#fff;margin:0 0 12px}
+  .case h2{font-size:15px;margin:0 0 4px;padding-right:44px}
+  .case p{font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 12px}
+  .badge{font-size:11px;padding:3px 8px;border-radius:99px;background:#eee;color:#666;white-space:nowrap}
+  .badge.ok{background:#d9f7e1;color:#12662a}
+  .badge.bad{background:#ffe2e2;color:#a10f0f}
+  .case>.badge{display:inline-block;margin:0 0 12px}
+  .field{margin:0 0 12px}
+  .field label{display:block;font-size:13px;margin:0 0 6px}
+  .field input{display:block;width:100%;margin:0}
+  .close{position:absolute;top:10px;right:10px;width:34px;height:34px;border:0;background:none;font-size:22px;color:var(--muted)}
+  .close+*{padding-right:44px}
+  .summary{font-size:12px;line-height:1.8;margin:12px 0 0;color:var(--muted)}
+  .summary b{color:var(--ink)}
+</style>
+</head>
+<body>
+<h1>登录键盘测试</h1>
+<p class="lead">依次点下面的编号，再点输入框。页面会自动判断键盘是否被收起（✅ 保持 / ❌ 被收起），结果会记在编号上。全部点完后截图这一页。</p>
+<div class="nav" id="nav"></div>
+<div id="case"></div>
+<p class="summary" id="summary"></p>
+<script>
+'use strict';
+const params = new URLSearchParams(location.search);
+const tall = params.has('tall');
+const stats = JSON.parse(localStorage.getItem('login-test-results') || '{}');
+const cases = {
+  1: {
+    title: '① 线上结构（自动聚焦关闭按钮）',
+    note: '和当前线上登录页一致：label + 账号 + 密码 + required + autocomplete，打开时把焦点放在关闭按钮上。',
+    html: '<button class="close" id="close1" aria-label="关闭">×</button>' +
+      '<div class="field"><label for="u1">账号</label><input id="u1" type="text" name="username" autocomplete="username" maxlength="64" required></div>' +
+      '<div class="field"><label for="p1">密码</label><input id="p1" type="password" name="password" autocomplete="current-password" maxlength="256" required></div>' +
+      '<button class="primary full" type="button">登录</button>',
+    focus: 'close1'
+  },
+  2: {
+    title: '② 线上结构（不聚焦关闭按钮）',
+    note: '表单完全一样，只是打开时不调用 focus()。',
+    html: '<button class="close" aria-label="关闭">×</button>' +
+      '<div class="field"><label for="u2">账号</label><input id="u2" type="text" name="username" autocomplete="username" maxlength="64" required></div>' +
+      '<div class="field"><label for="p2">密码</label><input id="p2" type="password" name="password" autocomplete="current-password" maxlength="256" required></div>' +
+      '<button class="primary full" type="button">登录</button>'
+  },
+  3: {
+    title: '③ 账号 + 密码（去掉 name/autocomplete/required）',
+    note: '保留 type=password，但去掉所有可能被浏览器识别为登录表单的属性。',
+    html: '<div class="field"><label for="u3">账号</label><input id="u3" type="text" placeholder="账号"></div>' +
+      '<div class="field"><label for="p3">密码</label><input id="p3" type="password" placeholder="密码"></div>'
+  },
+  4: {
+    title: '④ 只有账号框（没有密码框）',
+    note: '页面里完全没有 password 字段。',
+    html: '<div class="field"><label for="u4">账号</label><input id="u4" type="text" autocomplete="off" placeholder="账号"></div>'
+  },
+  5: {
+    title: '⑤ 密码框改成 text + 遮挡',
+    note: '没有 type=password，密码用 -webkit-text-security 遮挡。',
+    html: '<div class="field"><label for="u5">账号</label><input id="u5" type="text" name="account" autocomplete="off" placeholder="账号"></div>' +
+      '<div class="field"><label for="p5">密码</label><input id="p5" type="text" name="secret" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="密码" style="-webkit-text-security:disc"></div>'
+  },
+  6: {
+    title: '⑥ 线上结构 + 页面加长（强制可滚动）',
+    note: '表单一样，但页面底部加 1200px 空白，让页面在键盘弹出前后都可滚动。',
+    html: '<div class="field"><label for="u6">账号</label><input id="u6" type="text" name="username" autocomplete="username" maxlength="64" required></div>' +
+      '<div class="field"><label for="p6">密码</label><input id="p6" type="password" name="password" autocomplete="current-password" maxlength="256" required></div>'
+  }
+};
+const caseId = cases[params.get('case')] ? params.get('case') : '1';
+const active = cases[caseId];
+
+function renderNav() {
+  document.getElementById('nav').replaceChildren(...Object.keys(cases).map(id => {
+    const button = document.createElement('button');
+    button.textContent = id + (stats[id] === true ? ' ✅' : stats[id] === false ? ' ❌' : '');
+    button.setAttribute('aria-current', String(id === caseId));
+    button.onclick = () => { location.search = '?case=' + id + (tall ? '&tall=1' : ''); };
+    return button;
+  }));
+  const done = Object.keys(stats).length;
+  document.getElementById('summary').innerHTML = done
+    ? '已测：' + Object.keys(stats).sort().map(id => `${id} ${stats[id] ? '✅' : '❌'}`).join('　') + '<br>✅ = 键盘保持　❌ = 键盘被收起'
+    : '还没有结果。点编号切换案例，再点输入框。';
+}
+function setResult(ok) {
+  stats[caseId] = ok;
+  localStorage.setItem('login-test-results', JSON.stringify(stats));
+  renderNav();
+  const badge = document.querySelector('.case>.badge');
+  if (badge) { badge.textContent = ok ? '✅ 键盘保持' : '❌ 键盘被收起'; badge.className = 'badge ' + (ok ? 'ok' : 'bad'); }
+}
+function arm(input) {
+  const badge = document.querySelector('.case>.badge');
+  if (badge) { badge.textContent = '… 检测中'; badge.className = 'badge'; }
+  const viewport = () => Math.round(Math.min(innerHeight, visualViewport?.height || innerHeight));
+  const base = viewport();
+  setTimeout(() => {
+    const height = viewport();
+    const open = base - height > 80;
+    const kept = document.activeElement === input;
+    setResult(kept && open);
+  }, 900);
+}
+
+document.getElementById('case').innerHTML = '<section class="case"><h2>' + active.title + '</h2><p>' + active.note + '</p><div class="badge">未测试</div>' + active.html + (tall ? '<div style="height:1200px"></div>' : '') + '</section>';
+for (const input of document.querySelectorAll('.case input')) {
+  input.addEventListener('focus', () => arm(input));
+}
+if (active.focus) document.getElementById(active.focus)?.focus({ preventScroll: true });
+renderNav();
+</script>
+</body>
+</html>
