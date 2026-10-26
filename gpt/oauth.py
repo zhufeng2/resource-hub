@@ -40,6 +40,7 @@ def login_page(ticket, message='', status=200):
     message, ticket = html.escape(message), html.escape(ticket, quote=True)
     response = HTMLResponse(f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>连接 Resource Hub</title>
+<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
 <link rel="stylesheet" href="/assets/style.css"><link rel="stylesheet" href="/assets/glass.css"><body>
 <header class="header"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>Resource Hub<span class="brand-caption">资源检索</span></span></a></header>
 <main><section class="login-view"><div class="login-card"><span class="eyebrow">CONNECT YOUR WORKSPACE</span><h1>连接资源搜索</h1>
