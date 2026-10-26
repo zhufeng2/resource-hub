@@ -435,6 +435,18 @@ html { scrollbar-gutter:stable both-edges; }
 /* Keep the login field stationary while mobile keyboards open. */
 #login-dialog { animation:none;transform:none; }
 #login-dialog input { font-size:16px; }
-@media (hover:none) and (pointer:coarse) {
-  #login-dialog { margin-block:max(20px,6svh) auto;max-height:calc(94svh - 20px);overflow-y:auto;overscroll-behavior:contain; }
+@media (max-width:760px), (hover:none) and (pointer:coarse) {
+  /* Anchor above the keyboard: viewport-relative margins move the input
+     during a tap when Android resizes the layout viewport. Keep the editable
+     surface out of backdrop-filter compositing on mobile WebKit as well. */
+  #login-dialog {
+    inset: max(16px, env(safe-area-inset-top)) 0 auto;
+    margin:0 auto;
+    max-height:calc(100svh - max(16px, env(safe-area-inset-top)) - 16px);
+    max-height:calc(100dvh - max(16px, env(safe-area-inset-top)) - 16px);
+    overflow-y:auto;overscroll-behavior:contain;
+    background:#FBFCFE;
+    -webkit-backdrop-filter:none;backdrop-filter:none;
+  }
+  #login-dialog input { transition:none; }
 }
