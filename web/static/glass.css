@@ -196,9 +196,16 @@ input:not([type=checkbox]):not([type=file]),textarea,select,.select-trigger {
   background:rgb(255 255 255 / 50%);border:1px solid var(--line);font-size:14px;color:var(--ink);
 }
 input::placeholder,textarea::placeholder { color:var(--faint);font-size:13px; }
-input:focus,input:focus-visible,textarea:focus,textarea:focus-visible,select:focus-visible,.select-trigger[aria-expanded=true] {
+input:not([type=checkbox]):focus,input:not([type=checkbox]):focus-visible,textarea:focus,textarea:focus-visible,select:focus-visible,.select-trigger[aria-expanded=true] {
   border-color:rgb(0 102 204 / 45%);outline:none;
   box-shadow:0 0 0 3px rgb(0 102 204 / 12%);
+}
+input[type=checkbox]:not([role=switch]) {
+  width:16px;height:16px;min-height:0;padding:0;margin:0;flex:none;
+}
+input[type=checkbox]:focus { box-shadow:none; }
+input[type=checkbox]:focus-visible {
+  outline:2px solid rgb(0 102 204 / 60%);outline-offset:3px;
 }
 input[role=switch] { background:rgb(29 29 31 / 18%); }
 input[role=switch]:checked { background:var(--accent); }
