@@ -1,6 +1,6 @@
 'use strict';
 
-// Apply the last selected appearance before CSS paints the page. Store no account data.
+// Keep legacy appearance preferences readable; the site now has one glass theme.
 (() => {
   const key = 'resource-hub-theme';
   const valid = value => ['light', 'dark', 'system'].includes(value);
@@ -14,9 +14,7 @@
     const next = valid(value) ? value : 'light';
     const changed = preference !== next;
     preference = next;
-    const resolved = preference === 'system'
-      ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-      : preference;
+    const resolved = 'light';
     if (document.documentElement.dataset.theme !== resolved) {
       document.documentElement.dataset.theme = resolved;
     }

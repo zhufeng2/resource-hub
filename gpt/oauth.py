@@ -40,20 +40,20 @@ def login_page(ticket, message='', status=200):
     message, ticket = html.escape(message), html.escape(ticket, quote=True)
     response = HTMLResponse(f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>连接 Resource Hub</title>
-<link rel="stylesheet" href="/assets/style.css"><body>
+<link rel="stylesheet" href="/assets/style.css"><link rel="stylesheet" href="/assets/glass.css"><body>
 <header class="header"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>Resource Hub<span class="brand-caption">资源检索</span></span></a></header>
 <main><section class="login-view"><div class="login-card"><span class="eyebrow">CONNECT YOUR WORKSPACE</span><h1>连接资源搜索</h1>
-<p class="muted">登录后，允许 ChatGPT 使用此账号搜索资源。</p>
+<p class="muted">登录后，允许 ChatGPT 使用此账号搜索资源</p>
 <p class="form-error" role="alert">{message}</p><form method="post" action="/oauth/authorize">
 <input type="hidden" name="ticket" value="{ticket}">
 <label for="username">账号<input id="username" name="username" autocomplete="username" maxlength="64" required></label>
 <label for="password">密码<input id="password" type="password" name="password" autocomplete="current-password" maxlength="256" required></label>
-<button class="primary full" name="action" value="allow">登录并授权搜索 ↗</button>
+<button class="primary full" name="action" value="allow">登录并授权搜索</button>
 <button class="text-button full" name="action" value="deny" formnovalidate>取消</button></form>
-<p class="login-help">需要账号或忘记密码？请联系管理员。</p></div></section></main><script src="/assets/authorize.js" defer></script></body></html>''',
+<p class="login-help">需要账号或忘记密码？请联系管理员</p></div></section></main><script src="/assets/authorize.js" defer></script></body></html>''',
         # no-referrer makes browser form POSTs send Origin: null, failing our origin check.
         status_code=status, headers={**NO_STORE, 'Referrer-Policy': 'same-origin',
-            'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+            'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
             'X-Frame-Options': 'DENY', 'X-Content-Type-Options': 'nosniff'})
     return response
 
@@ -155,14 +155,14 @@ class OAuth:
         if not ticket or not p:
             log.warning('OAuth ticket missing ticket=%s cookie=%s db=%s pid=%s', digest(ticket)[:12] if ticket else '-', bool(cookie), self.store.path, os.getpid())
             return error('authorization_expired_or_invalid', 403,
-                         '授权页面已过期或已使用，请返回 ChatGPT 重新发起连接，并在 10 分钟内完成登录。')
+                         '授权页面已过期或已使用，请返回 ChatGPT 重新发起连接，并在 10 分钟内完成登录')
         if not cookie or not hmac.compare_digest(ticket.encode(), cookie.encode()):
             log.warning('OAuth ticket cookie mismatch ticket=%s db=%s pid=%s', digest(ticket)[:12], self.store.path, os.getpid())
             return error('authorization_expired_or_invalid', 403,
-                         '浏览器未携带此授权页面的有效 Cookie。请允许本站 Cookie，返回 ChatGPT 重新连接，并在同一浏览器完成登录。')
+                         '浏览器未携带此授权页面的有效 Cookie请允许本站 Cookie，返回 ChatGPT 重新连接，并在同一浏览器完成登录')
         if p['redirect_uri'] not in self.settings.redirect_uris:
             return error('authorization_expired_or_invalid', 403,
-                         '授权回调地址配置已变化，请返回 ChatGPT 重新连接；如仍失败，请联系管理员检查回调配置。')
+                         '授权回调地址配置已变化，请返回 ChatGPT 重新连接；如仍失败，请联系管理员检查回调配置')
         if form.get('action') == 'deny':
             with self.store.connection(True) as db:
                 db.execute('DELETE FROM tickets WHERE id=?', (digest(ticket),))
@@ -173,16 +173,16 @@ class OAuth:
         if len(username) > 64 or len(password) > 256 or form.get('action') != 'allow':
             return error('invalid_request')
         if not self.store.rate('user-login:' + digest(username), 20, 300):
-            return login_page(ticket, '尝试次数过多，请稍后重试。', 429)
+            return login_page(ticket, '尝试次数过多，请稍后重试', 429)
         user = await asyncio.to_thread(self.store.login, username, password)
         if not user:
-            return login_page(ticket, '账号或密码错误，或账号已停用。', 401)
+            return login_page(ticket, '账号或密码错误，或账号已停用', 401)
         try:
             code, p = self.store.authorize(ticket, user['id'])
         except ValueError:
             log.warning('OAuth ticket consumed or account disabled ticket=%s db=%s pid=%s', digest(ticket)[:12], self.store.path, os.getpid())
             return error('authorization_expired_or_invalid', 403,
-                         '授权请求已失效或账号已停用，请返回 ChatGPT 重新连接；如仍失败，请联系管理员。')
+                         '授权请求已失效或账号已停用，请返回 ChatGPT 重新连接；如仍失败，请联系管理员')
         response = self.redirect(p, code=code)
         response.delete_cookie(authorization_cookie(ticket), path='/oauth/authorize')
         log.info('OAuth login allowed ticket=%s user_id=%s db=%s pid=%s', digest(ticket)[:12], user['id'], self.store.path, os.getpid())
