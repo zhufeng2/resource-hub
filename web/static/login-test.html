@@ -78,6 +78,29 @@ const cases = {
     note: '表单一样，但页面底部加 1200px 空白，让页面在键盘弹出前后都可滚动。',
     html: '<div class="field"><label for="u6">账号</label><input id="u6" type="text" name="username" autocomplete="username" maxlength="64" required></div>' +
       '<div class="field"><label for="p6">密码</label><input id="p6" type="password" name="password" autocomplete="current-password" maxlength="256" required></div>'
+  },
+  7: {
+    title: '⑦ 只有一个密码框',
+    note: '页面上只有一个 type=password 输入框，没有账号框。',
+    html: '<div class="field"><label for="p7">密码</label><input id="p7" type="password" placeholder="密码"></div>'
+  },
+  8: {
+    title: '⑧ 账号 + 邮箱（没有密码语义）',
+    note: '两个输入框，但第二个是普通文本框，label 是“邮箱”。',
+    html: '<div class="field"><label for="u8">账号</label><input id="u8" type="text" placeholder="账号"></div>' +
+      '<div class="field"><label for="e8">邮箱</label><input id="e8" type="text" placeholder="邮箱"></div>'
+  },
+  9: {
+    title: '⑨ 账号 + 口令（text 遮挡，不写“密码”）',
+    note: '第二个框是 type=text + 遮挡，label/placeholder 都用“口令”，完全避开 password 语义。',
+    html: '<div class="field"><label for="u9">账号</label><input id="u9" type="text" placeholder="账号"></div>' +
+      '<div class="field"><label for="p9">口令</label><input id="p9" type="text" placeholder="输入口令" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="-webkit-text-security:disc"></div>'
+  },
+  10: {
+    title: '⑩ 账号 + 口令（type=password，不写“密码”）',
+    note: '第二个框是 type=password，但 label/placeholder 改成“口令”。',
+    html: '<div class="field"><label for="u10">账号</label><input id="u10" type="text" placeholder="账号"></div>' +
+      '<div class="field"><label for="p10">口令</label><input id="p10" type="password" placeholder="输入口令"></div>'
   }
 };
 const caseId = cases[params.get('case')] ? params.get('case') : '1';
