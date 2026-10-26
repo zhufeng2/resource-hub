@@ -90,9 +90,10 @@ node --check web/static/startup.js
 node --check web/static/app.js
 node --check web/static/accounts.js
 node --check web/static/controls.js
+node --check web/static/login-debug.js
 ```
 
-安装 Playwright 及其 Chromium 后，运行 `node web/tests/mobile-login.cjs` 检查手机登录框在视口缩小时的位置、输入焦点、字段切换和重新打开。可用 `CHROME_CHANNEL=chrome` 使用本机 Chrome，或用 `BROWSER=webkit` 检查 WebKit。此测试模拟视口变化，真实软键盘的弹出与收起仍需在手机浏览器复测。
+安装 Playwright 及其 Chromium 后，运行 `node web/tests/mobile-login.cjs`：手机宽度下登录页必须位于普通文档流（没有 fixed 祖先），视口高度变化时输入框不丢焦点，关闭后重新打开会清空密码；桌面宽度下仍打开原生对话框。可用 `CHROME_CHANNEL=chrome` 使用本机 Chrome，或用 `BROWSER=webkit` 检查 WebKit。此测试模拟视口变化，真实软键盘的弹出与收起仍需在手机浏览器复测。若真机仍异常，用 `?login-debug=1` 打开页面，复现后截图屏幕底部的 focus/blur、visualViewport 和 dialog 事件日志。
 
 ## 网页回归检查
 

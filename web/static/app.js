@@ -29,24 +29,79 @@ $('avatar').addEventListener('click',()=>setMenu($('user-menu').inert));
 $('avatar').addEventListener('keydown',event=>{if(event.key==='ArrowDown'){event.preventDefault();setMenu(true,true);}});
 $('user-menu').addEventListener('keydown',event=>{const items=[...$('user-menu').querySelectorAll('[role^=menuitem]')].filter(item=>!item.hidden&&!item.closest('[hidden]'));let index=items.indexOf(document.activeElement);if(['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();index=event.key==='Home'?0:event.key==='End'?items.length-1:(index+(['ArrowDown','ArrowRight'].includes(event.key)?1:-1)+items.length)%items.length;items[index].focus();}});
 window.addEventListener('click',event=>{if(!$('user-control').contains(event.target)&&!$('user-menu').contains(event.target))setMenu(false);});
-window.addEventListener('keydown',event=>{if(event.key==='Escape'){setMenu(false);if(!document.querySelector('dialog[open]')&&$('settings-toggle').getAttribute('aria-expanded')==='true')toggleSettings(false);}if(event.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)&&!document.querySelector('dialog[open]')){event.preventDefault();if(location.pathname!=='/')goHome();$('query').focus();}});
+window.addEventListener('keydown',event=>{if(event.key==='Escape'){setMenu(false);if(!$('login-panel').hidden)closeLoginPanel();if(!document.querySelector('dialog[open]')&&$('settings-toggle').getAttribute('aria-expanded')==='true')toggleSettings(false);}if(event.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)&&!document.querySelector('dialog[open]')){event.preventDefault();if(location.pathname!=='/')goHome();$('query').focus();}});
 function identity(){const user=state.user,signed=!!user;if(mcpCredential.owner!==(user?state.csrf:null))resetMCPCredential();$('login-trigger').hidden=signed;$('user-control').hidden=!signed;$('profile-nav').hidden=!signed;if(!user){for(const id of ['menu-name','profile-name','account-name','profile-id','account-id'])$(id).textContent='';$('users-table').replaceChildren();$('bindings').replaceChildren();return;}const initial=Array.from(user.username)[0].toUpperCase();['avatar','profile-avatar','account-avatar','menu-avatar'].forEach(id=>$(id).textContent=initial);['menu-name','profile-name','account-name'].forEach(id=>$(id).textContent=user.username);$('profile-role').textContent=$('account-role').textContent=user.is_admin?'管理员':'成员';$('profile-id').textContent=$('account-id').textContent='账号 ID · '+(user.id||'—');$('users-tab').hidden=!user.can_manage_users;$('menu-account-label').textContent=(user.is_admin?'管理员':'成员')+' · ID '+(user.id||'—');$('mcp-url').textContent=mcpServiceURL();$('account-status').textContent=user.account_status==='active'?'正常':'已登录';renderQuota();}
 function renderQuota(){updateMenuTheme();const quota=state.user?.quota;if(!quota)return;const unlimited=!!quota.unlimited,remaining=unlimited?'不限':quota.remaining,limit=unlimited?'不限':quota.daily_limit,reset=quota.resets_at?'下次重置：'+new Date(quota.resets_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})+'（北京时间）'+(quota.in_progress?' · '+quota.in_progress+' 次搜索处理中':''):'';$('account-remaining').textContent=remaining;$('account-used').textContent=quota.used;$('account-limit').textContent=limit;$('account-remaining-row').hidden=unlimited;$('account-usage-row').hidden=unlimited;$('account-unlimited-row').hidden=!unlimited;$('account-unlimited-used').textContent='今日已用 '+quota.used+' 次';$('account-progress').hidden=unlimited;$('account-progress').max=unlimited?1:Math.max(quota.daily_limit,1);$('account-progress').value=unlimited?0:Math.min(quota.used,quota.daily_limit);$('account-reset').hidden=unlimited;$('account-reset').textContent=reset;}
 async function showAccount(){setMenu(false);if(!state.user){openLogin(()=>showAccount());return;}try{const user=await api('/api/session');if(!user.username){state.user=null;identity();openLogin(()=>showAccount());return;}state.user={...state.user,...user};state.csrf=user.csrf;identity();$('account-dialog').showModal();}catch(error){toast(message(error));}}
 $('account-info-trigger').addEventListener('click',showAccount);$('profile-account-info').addEventListener('click',showAccount);$('close-account').addEventListener('click',()=>$('account-dialog').close());
-function openLogin(action=null){setMenu(false);$('login-dialog').returnValue='';pendingAction=action;$('login-error').textContent='';if(!$('login-dialog').open)$('login-dialog').showModal();}
-$('login-trigger').addEventListener('click',()=>openLogin());$('close-login').addEventListener('click',()=>$('login-dialog').close());
-$('login-dialog').addEventListener('close',()=>{$('login-form').querySelector('[name=password]').value='';if($('login-dialog').returnValue!=='authenticated'){pendingJob=null;pendingAction=null;if(location.pathname==='/profile'){history.replaceState({},'','/');showHome();setResultMode(false);}}});
+// Desktop keeps the native dialog. Phones get the same form as a normal
+// in-flow page instead: a top-layer fixed dialog is what lets iOS and Android
+// drop focus (and close the keyboard) when the viewport changes on focus.
+const mobileLogin=matchMedia('(max-width:760px), (hover:none) and (pointer:coarse)');
+const loginForms=[...document.querySelectorAll('[data-login-form]')];
+const loginErrors=()=>loginForms.map(form=>form.querySelector('.form-error')).filter(Boolean);
+function openLogin(action=null){
+  setMenu(false);
+  if(mobileLogin.matches){
+    // An in-flow section cannot sit above an open top-layer dialog (for
+    // example "save settings" while signed out), so close those first.
+    if($('login-dialog').open)$('login-dialog').close('switch');
+    for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();
+    $('login-panel').hidden=false;
+    document.body.classList.add('login-open');
+    window.scrollTo({top:0,behavior:'instant'});
+    $('close-login-panel').focus({preventScroll:true});
+  }else{
+    $('login-panel').hidden=true;
+    document.body.classList.remove('login-open');
+    $('login-dialog').returnValue='';
+    if(!$('login-dialog').open)$('login-dialog').showModal();
+  }
+  pendingAction=action;
+  loginErrors().forEach(element=>element.textContent='');
+}
+function loginCancelled(){
+  pendingJob=null;pendingAction=null;
+  if(location.pathname==='/profile'){history.replaceState({},'','/');showHome();setResultMode(false);}
+}
+function closeLoginPanel(authenticated=false){
+  if($('login-panel').hidden)return;
+  $('login-panel').hidden=true;
+  document.body.classList.remove('login-open');
+  $('login-panel').querySelector('[name=password]').value='';
+  if(!authenticated){loginCancelled();$('login-trigger').focus({preventScroll:true});}
+}
+$('login-trigger').addEventListener('click',()=>openLogin());
+$('close-login').addEventListener('click',()=>$('login-dialog').close());
+$('close-login-panel').addEventListener('click',()=>closeLoginPanel());
+$('login-dialog').addEventListener('close',()=>{$('login-form').querySelector('[name=password]').value='';if(!['authenticated','switch'].includes($('login-dialog').returnValue))loginCancelled();});
 async function boot(){try{const data=await api('/api/session');state.csrf=data.csrf;state.user=data.username?data:null;state.savedPrefs={...defaults,theme:window.ResourceTheme.preference,...(data.preferences||{})};if(!pendingJob&&!pendingAction)state.prefs=clone(state.savedPrefs);identity();theme(state.prefs.theme);renderSettings();if(state.user)await loadHistory();else{state.history=[];renderHistory();}await restoreURL();}catch(error){toast(message(error));}}
-$('login-form').addEventListener('submit',async event=>{event.preventDefault();const form=event.currentTarget,button=form.querySelector('button');button.disabled=true;$('login-error').textContent='';try{const data=await post('/api/login',Object.fromEntries(new FormData(form)));state.user=data;state.csrf=data.csrf;state.savedPrefs={...defaults,...data.preferences};if(!pendingJob&&!pendingAction){state.prefs=clone(state.savedPrefs);renderSettings();theme(state.prefs.theme);}identity();form.reset();$('login-dialog').close('authenticated');await loadHistory();const action=pendingAction,job=pendingJob;pendingAction=null;pendingJob=null;if(job)await runSearch(job.query,job.path,job.extra,job.context);else if(action)await action();else await restoreURL();}catch(error){$('login-error').textContent=message(error);if(error.status===403){const session=await api('/api/session').catch(()=>null);if(session)state.csrf=session.csrf;}}finally{button.disabled=false;}});
+async function submitLogin(form){
+  const button=form.querySelector('button[type=submit]')||form.querySelector('button'),error=form.querySelector('.form-error');
+  button.disabled=true;if(error)error.textContent='';
+  try{
+    const data=await post('/api/login',Object.fromEntries(new FormData(form)));
+    state.user=data;state.csrf=data.csrf;state.savedPrefs={...defaults,...data.preferences};
+    if(!pendingJob&&!pendingAction){state.prefs=clone(state.savedPrefs);renderSettings();theme(state.prefs.theme);}
+    identity();form.reset();closeLoginPanel(true);$('login-dialog').close('authenticated');
+    await loadHistory();
+    const action=pendingAction,job=pendingJob;pendingAction=null;pendingJob=null;
+    if(job)await runSearch(job.query,job.path,job.extra,job.context);else if(action)await action();else await restoreURL();
+  }catch(err){
+    if(error)error.textContent=message(err);
+    if(err.status===403){const session=await api('/api/session').catch(()=>null);if(session)state.csrf=session.csrf;}
+  }finally{button.disabled=false;}
+}
+loginForms.forEach(form=>form.addEventListener('submit',event=>{event.preventDefault();submitLogin(event.currentTarget);}));
+if(new URLSearchParams(location.search).has('login-debug'))import('/assets/login-debug.js').catch(()=>{});
 async function logout(){try{await post('/api/logout');for(const id of ['account-dialog','modal'])if($(id).open)$(id).close();state.user=null;identity();state.rows=[];state.search=null;state.history=[];state.cache.clear();pendingJob=null;pendingAction=null;setMenu(false);goHome();await boot();toast('已退出登录');}catch(error){toast(message(error));}}
 $('logout-button').addEventListener('click',logout);$('account-logout').addEventListener('click',logout);
 function cancelSearch(){stopWaitingAnimation();if(searchController)searchController.abort();state.epoch++;state.busy=false;$('search-button').disabled=false;$('search-button').querySelector('span').textContent='搜索';}
 function route(url,replace=false){cancelSearch();toggleSettings(false);history[replace?'replaceState':'pushState']({},'',url);window.scrollTo({top:0,behavior:'instant'});restoreURL();}
-function goHome(){if(searchController)searchController.abort();state.epoch++;state.busy=false;route('/');}
-function goProfile(tab='history'){setMenu(false);if($('account-dialog').open)$('account-dialog').close();if(!state.user){openLogin(()=>goProfile(tab));return;}route('/profile'+(tab!=='history'?'?tab='+tab:''));}
+function goHome(){if(!$('login-panel').hidden)closeLoginPanel();if(searchController)searchController.abort();state.epoch++;state.busy=false;route('/');}
+function goProfile(tab='history'){setMenu(false);if(!$('login-panel').hidden)closeLoginPanel();if($('account-dialog').open)$('account-dialog').close();if(!state.user){openLogin(()=>goProfile(tab));return;}route('/profile'+(tab!=='history'?'?tab='+tab:''));}
 window.addEventListener('click',event=>{const link=event.target.closest('a[data-home],a[data-profile]');if(!link||event.metaKey||event.ctrlKey||event.shiftKey)return;event.preventDefault();link.hasAttribute('data-home')?goHome():goProfile();});
-window.addEventListener('popstate',()=>{cancelSearch();restoreURL();});
+window.addEventListener('popstate',()=>{if(!$('login-panel').hidden)closeLoginPanel();cancelSearch();restoreURL();});
 function conditionsFromURL(params){const prefs={...state.savedPrefs,src:'all',plugins:[],channels:[],sort:'relevance',include_words:'',exclude_words:'',match_mode:'any'};if([10,20,50].includes(Number(params.get('size'))))prefs.page_size=Number(params.get('size'));for(const[key,param]of[['cloud_types','types'],['plugins','plugins'],['channels','channels']])if(params.has(param))prefs[key]=params.get(param).split(',').filter(Boolean);for(const[key,param,allowed]of[['sort','sort',['relevance','newest']],['src','src',['all','tg','plugin']],['match_mode','match',['any','all']]])if(allowed.includes(params.get(param)))prefs[key]=params.get(param);if(params.has('inc'))prefs.include_words=params.get('inc').slice(0,200);if(params.has('exc'))prefs.exclude_words=params.get('exc').slice(0,200);if(params.has('invalid'))prefs.hide_invalid=params.get('invalid')==='hide';return prefs;}
 function searchURL(query,options,{sid='',rid='',binding='',page=0,refresh=false}={}){const url=new URL('/',location.origin);url.searchParams.set('q',query);if(refresh)url.searchParams.set('refresh','1');if(options.page_size!==20)url.searchParams.set('size',options.page_size);url.searchParams.set('types',options.cloud_types.join(','));if(options.src!=='all')url.searchParams.set('src',options.src);for(const key of ['plugins','channels'])if(options[key].length)url.searchParams.set(key,options[key].join(','));if(options.sort!=='relevance')url.searchParams.set('sort',options.sort);if(options.match_mode!=='any')url.searchParams.set('match',options.match_mode);if(options.include_words)url.searchParams.set('inc',options.include_words);if(options.exclude_words)url.searchParams.set('exc',options.exclude_words);if(options.hide_invalid)url.searchParams.set('invalid','hide');if(sid)url.searchParams.set('sid',sid);if(rid)url.searchParams.set('rid',rid);if(binding)url.searchParams.set('binding',binding);if(page)url.searchParams.set('page',page+1);return url.pathname+url.search;}
 function syncURL(){if(location.pathname!=='/'||!state.search)return;history.replaceState({},'',searchURL(state.search.query,state.prefs,{sid:state.search.search_id,rid:state.search.request_id,binding:state.search.source_binding||'',page:state.page}));}

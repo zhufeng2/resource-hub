@@ -432,21 +432,22 @@ html { scrollbar-gutter:stable both-edges; }
 #security-panel .mcp-token-footer { flex-direction:column;align-items:flex-start;gap:12px; }
 #security-panel #password-form,#security-panel .mcp-connection { width:100%;max-width:none; }
 
-/* Keep the login field stationary while mobile keyboards open. */
+/* The dialog is desktop-only; phones use the in-flow #login-panel below. */
 #login-dialog { animation:none;transform:none; }
-#login-dialog input { font-size:16px; }
+#login-dialog input { font-size:16px;transition:none; }
+
+/* Mobile login is a normal page section instead of a top-layer dialog.
+   In-flow fields let the browser pan/scroll the focused input above the
+   keyboard without moving the field or dropping its focus. */
+body.login-open #home-view,
+body.login-open #profile-view { display:none!important; }
+#login-panel { align-items:flex-start;padding:clamp(28px,7vh,64px) 18px 48px; }
+#login-panel .login-card { width:min(390px,100%);max-width:100%;padding:28px 24px; }
+#login-panel .login-card h1 { font-size:25px;letter-spacing:-.5px; }
+/* 16px stops iOS Safari from zooming the page when a field is focused. */
+#login-panel input { font-size:16px; }
+body.login-open #login-trigger { display:none; }
 @media (max-width:760px), (hover:none) and (pointer:coarse) {
-  /* Anchor above the keyboard: viewport-relative margins move the input
-     during a tap when Android resizes the layout viewport. Keep the editable
-     surface out of backdrop-filter compositing on mobile WebKit as well. */
-  #login-dialog {
-    inset: max(16px, env(safe-area-inset-top)) 0 auto;
-    margin:0 auto;
-    max-height:calc(100svh - max(16px, env(safe-area-inset-top)) - 16px);
-    max-height:calc(100dvh - max(16px, env(safe-area-inset-top)) - 16px);
-    overflow-y:auto;overscroll-behavior:contain;
-    background:#FBFCFE;
-    -webkit-backdrop-filter:none;backdrop-filter:none;
-  }
-  #login-dialog input { transition:none; }
+  /* Solid surface keeps mobile WebKit keyed fields out of compositing. */
+  .login-card { background:#FBFCFE;-webkit-backdrop-filter:none;backdrop-filter:none; }
 }

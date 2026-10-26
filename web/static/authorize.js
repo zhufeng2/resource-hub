@@ -13,3 +13,5 @@ document.addEventListener('DOMContentLoaded', () => {
     form.dataset.submitting = '1';
   });
 });
+
+if (new URLSearchParams(location.search).has('login-debug')) import('/assets/login-debug.js').catch(() => {});
