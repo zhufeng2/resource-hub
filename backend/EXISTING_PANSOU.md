@@ -1,10 +1,12 @@
-# 连接服务器上已有的 PanSou API
+# 连接已有 PanSou 与迁移网页
 
-适用情况：服务器已有 `pansou-api-1`，镜像为 `ghcr.io/fish2018/pansou`，端口为 `127.0.0.1:8888->8888/tcp`。
+适用于已有 PanSou 搜索 API、希望接入 Resource Hub 网页和 MCP 的部署者。本文以容器 `pansou-api-1`、内部端口 `8888` 为例，执行命令前替换为实际的容器名、服务名和域名。
+
+[返回部署指南](README.md) · [项目首页](../README.md)
 
 推荐直接使用本项目自带的 Caddy 作为网站入口，自动管理 HTTPS。若当前域名通过宿主机 Nginx 提供旧网页，可按文末步骤切换；无需单独部署前端。
 
-此容器提供搜索 API，应继续运行。当前容器列表没有独立的 `pansou-web` 服务，不能通过删除 `pansou-api-1` 来替换旧网页。
+PanSou API 是搜索上游，需要继续运行。API 与旧网页可能属于不同容器，也可能由宿主机代理提供旧静态页面；迁移前先确认各自职责。
 
 ## 接口关系
 
@@ -92,7 +94,7 @@ SEARCH_CONCURRENCY=4
 
 本项目适配器要求上游认证。若使用账号密码，将 `PANSOU_API_TOKEN` 留空，并填写 PanSou 的用户名和密码。若现有 PanSou 没有启用认证，先按它当前版本的配置启用；不要填写随机 Token 来绕过配置。凭据只保存在服务器，不能填入网页 JavaScript。
 
-PanSou 官方当前支持在原有 API 服务的 `environment` 中设置以下变量；实际密码和签名密钥应自行生成并仅保存在服务器：
+如果所使用的 PanSou 版本支持以下认证环境变量，可在原有 API 服务中配置；配置项以该版本的官方文档为准。密码和签名密钥应自行生成并仅保存在服务器：
 
 ```yaml
 environment:
@@ -121,9 +123,9 @@ docker compose --project-directory backend --env-file backend/.env -f backend/co
 docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml -f backend/compose.pansou.yaml exec app python -m backend.manage add-user admin --admin
 ```
 
-管理员密码按提示输入。已有 `admin` 时跳过创建。后续可在个人主页中创建普通用户。
+管理员密码按提示输入。已有 `admin` 时跳过创建。名为 `admin` 的管理员可在个人主页的“用户管理”中创建普通用户。
 
-后续更新、查看状态和执行管理命令时，均保留两个 `-f` 参数，以加载外部网络配置。
+后续手动执行 Compose 命令时，均保留两个 `-f` 参数，以加载外部网络配置。已部署后的日常更新可在仓库根目录执行 `bash update.sh`，脚本会自动检测并加载覆盖文件。
 
 ## 4. 验证实际接口
 
@@ -147,7 +149,7 @@ sudo ss -lntp '( sport = :80 or sport = :443 )'
 
 如果仅有 `pansou-api-1`，继续检查宿主机代理或静态站点配置。将域名入口切换到新项目，由新项目同时处理网页与 `/api/*`；不要把新网页的 `/api/*` 直接转发到 PanSou，否则会绕开本项目的登录、CSRF 和额度逻辑，且两个服务的接口格式不同。
 
-如果确认存在独立旧网页容器，在新站验证成功后，先从旧 Compose 文件移除该网页服务，再停止并移除对应的旧网页容器。保留搜索 API、挂载目录及数据卷。当前提供的容器列表没有可确认删除的旧网页容器，因此本说明不猜测容器名或执行删除。
+如果确认存在独立旧网页容器，在新站验证成功后，先从旧 Compose 文件移除该网页服务，再停止并移除对应的旧网页容器。保留搜索 API、挂载目录及数据卷。容器名称不能用来判断是否可以删除，应先核对原有 Compose 配置、挂载目录和服务用途。
 
 如旧页面由代理的静态目录提供，切换对应域名的站点配置即可；先保留旧文件用于回退，无需删除整个代理服务。
 
