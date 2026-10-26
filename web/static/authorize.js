@@ -14,5 +14,3 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-if (new URLSearchParams(location.search).has('login-debug')) import('/assets/login-debug.js').catch(() => {});
-if (new URLSearchParams(location.search).has('login-no-autofill')) document.querySelectorAll('form[action="/oauth/authorize"] input').forEach(input => { input.autocomplete = 'off'; });

@@ -93,12 +93,6 @@ async function submitLogin(form){
   }finally{button.disabled=false;}
 }
 loginForms.forEach(form=>form.addEventListener('submit',event=>{event.preventDefault();submitLogin(event.currentTarget);}));
-if(new URLSearchParams(location.search).has('login-debug'))import('/assets/login-debug.js').catch(()=>{});
-// Diagnostic A/B switch: ?login-no-autofill=1 disables browser autofill on the
-// login fields to test whether a password-manager sheet is hiding the keyboard.
-if(new URLSearchParams(location.search).has('login-no-autofill')){
-  for(const form of loginForms){form.autocomplete='off';for(const input of form.querySelectorAll('input'))input.autocomplete='off';}
-}
 async function logout(){try{await post('/api/logout');for(const id of ['account-dialog','modal'])if($(id).open)$(id).close();state.user=null;identity();state.rows=[];state.search=null;state.history=[];state.cache.clear();pendingJob=null;pendingAction=null;setMenu(false);goHome();await boot();toast('已退出登录');}catch(error){toast(message(error));}}
 $('logout-button').addEventListener('click',logout);$('account-logout').addEventListener('click',logout);
 function cancelSearch(){stopWaitingAnimation();if(searchController)searchController.abort();state.epoch++;state.busy=false;$('search-button').disabled=false;$('search-button').querySelector('span').textContent='搜索';}
