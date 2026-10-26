@@ -441,7 +441,10 @@ html { scrollbar-gutter:stable both-edges; }
    keyboard without moving the field or dropping its focus. */
 body.login-open #home-view,
 body.login-open #profile-view { display:none!important; }
-#login-panel { align-items:flex-start;padding:clamp(28px,7vh,64px) 18px 48px; }
+#login-panel { align-items:flex-start;padding:36px 18px 48px; }
+/* Keep the login page from changing height with viewport units while the
+   keyboard resizes the layout viewport in Android WebViews. */
+body.login-open,body.login-open main { min-height:0; }
 #login-panel .login-card { width:min(390px,100%);max-width:100%;padding:28px 24px; }
 #login-panel .login-card h1 { font-size:25px;letter-spacing:-.5px; }
 /* 16px stops iOS Safari from zooming the page when a field is focused. */
