@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from cryptography.fernet import Fernet, InvalidToken
 
 SHANGHAI = timezone(timedelta(hours=8))
+MCP_TOKEN_DAYS = 7
 
 
 def day_key(now=None):
@@ -375,7 +376,7 @@ class Store:
                     pass  # Hash-only legacy tokens or lost keys require explicit regeneration.
         return value
 
-    def issue_mcp_token(self, username, resource, days=365):
+    def issue_mcp_token(self, username, resource, days=MCP_TOKEN_DAYS):
         """Issue a long-lived Bearer token for MCP clients that cannot do OAuth."""
         if not 1 <= days <= 3650:
             raise ValueError('有效期需为 1–3650 天')

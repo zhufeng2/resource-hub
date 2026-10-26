@@ -419,7 +419,6 @@ html { scrollbar-gutter:stable both-edges; }
 .mcp-connection .mcp-token-field input,.mcp-connection .mcp-token-field input:focus { flex:1;min-width:0;width:0;padding:8px 0;border:0;border-radius:0;background:transparent;box-shadow:none;font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
 .mcp-token-field:focus-within { outline:2px solid rgb(0 102 204 / 35%);outline-offset:2px; }
 .mcp-connection .field-help { margin:0;font-size:12px;line-height:1.6;color:var(--muted); }
-.mcp-connection .mcp-auth-hint { margin-top:8px;font:11px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere; }
 .mcp-token-footer { display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px; }
 .mcp-token-actions { display:flex;align-items:center;gap:8px; }
 .mcp-token-actions .secondary { min-height:36px;padding:7px 12px;border-radius:11px;font-size:12px;font-weight:400; }
@@ -432,3 +431,10 @@ html { scrollbar-gutter:stable both-edges; }
 #security-panel form>label,#security-panel .form-grid>label { margin-bottom:18px; }
 #security-panel .mcp-token-footer { flex-direction:column;align-items:flex-start;gap:12px; }
 #security-panel #password-form,#security-panel .mcp-connection { width:100%;max-width:none; }
+
+/* Keep the login field stationary while mobile keyboards open. */
+#login-dialog { animation:none;transform:none; }
+#login-dialog input { font-size:16px; }
+@media (hover:none) and (pointer:coarse) {
+  #login-dialog { margin-block:max(20px,6svh) auto;max-height:calc(94svh - 20px);overflow-y:auto;overscroll-behavior:contain; }
+}

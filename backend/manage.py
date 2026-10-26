@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import sqlite3
 
-from .store import Store
+from .store import MCP_TOKEN_DAYS, Store
 
 
 def main():
@@ -26,7 +26,7 @@ def main():
     sub.add_parser('list-users')
     mcp = sub.add_parser('issue-mcp-token', help='为 DeepSeek Harness 等客户端生成长期 Bearer Token')
     mcp.add_argument('username')
-    mcp.add_argument('--days', type=int, default=365, help='有效期天数，默认 365')
+    mcp.add_argument('--days', type=int, default=MCP_TOKEN_DAYS, help='有效期天数，默认 7')
     sub.add_parser('revoke-mcp-token', help='吊销该账号的 MCP Token').add_argument('username')
     sub.add_parser('list-mcp-tokens', help='列出 MCP Token 的账号和到期时间')
     sub.add_parser('cleanup', help='清理过期授权及旧结果')
@@ -51,7 +51,7 @@ def main():
         if not base.startswith('https://'):
             raise ValueError('需要配置 HTTPS 的 PUBLIC_BASE_URL')
         token = store.issue_mcp_token(args.username, base + '/mcp', args.days)
-        print('MCP Token（只显示一次，请妥善保存）：')
+        print('MCP Token（登录网页后也可查看）：')
         print(token)
         return
     elif args.command == 'revoke-mcp-token':

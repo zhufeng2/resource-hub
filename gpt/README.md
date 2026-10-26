@@ -36,7 +36,9 @@ URL: https://你的域名/mcp
 Authorization: Bearer 你的MCP令牌
 ```
 
-该 Token 由 Resource Hub 签发，不能填入 `PANSOU_API_TOKEN`，也不能使用 PanSou 的 Token 替代。Token 按用户隔离并共享账号额度，默认有效期 365 天。登录后可随时显示和复制自己的 Token；服务器加密保存可恢复副本，不在网页本地存储中持久化。旧版仅有哈希的 Token 仍能认证，但无法显示，需主动重新生成一次。重新生成会使原 Token 立即失效，客户端需更新配置；单独撤销 Token 不影响 OAuth。
+该 Token 由 Resource Hub 签发，不能填入 `PANSOU_API_TOKEN`，也不能使用 PanSou 的 Token 替代。Token 按用户隔离并共享账号额度，默认有效期 7 天。登录后可随时显示和复制自己的 Token；服务器加密保存可恢复副本，不在网页本地存储中持久化。旧版仅有哈希的 Token 仍能认证，但无法显示，需主动重新生成一次。重新生成会使原 Token 立即失效，客户端需更新配置；单独撤销 Token 不影响 OAuth。
+
+有效期自签发时起计算为 7 × 24 小时；重新生成后开始新的 7 天，旧 Token 立即失效。过期后登录网页重新生成，并更新客户端中的 `Authorization: Bearer <Token>` 请求头。已有 Token 保留签发时的到期时间；改为一星期需主动重新生成。网页不展示请求头示例或到期时间，配置说明以本文为准。网页登录会话仍为 7 天，OAuth 访问令牌另行管理。
 
 ### DeepSeek Harness 配置示例
 
@@ -61,7 +63,7 @@ Authorization: Bearer 你的MCP令牌
 以下命令在已部署服务的仓库根目录执行。连接已有 PanSou、使用了 Compose 覆盖文件时，在 `exec` 前增加 `-f backend/compose.pansou.yaml`。
 
 ```bash
-docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app python -m backend.manage issue-mcp-token alice --days 365
+docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app python -m backend.manage issue-mcp-token alice --days 7
 docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app python -m backend.manage list-mcp-tokens
 docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app python -m backend.manage revoke-mcp-token alice
 ```

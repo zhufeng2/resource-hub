@@ -263,6 +263,19 @@ class WebTests(unittest.TestCase):
         self.assertIsNone(self.store.authenticate(oauth['access_token'], self.settings.resource))
         self.assertIsNone(self.client.get('/api/mcp-token').json()['token'])
 
+    def test_personal_mcp_token_default_lifetime_is_seven_days(self):
+        issued_at = 1800000000
+        bob = self.store.login('bob', PASSWORD)
+        with patch('backend.store.time.time', return_value=issued_at):
+            token = self.store.issue_mcp_token('bob', self.settings.resource)
+            status = self.store.mcp_token_status(bob['id'], self.settings.resource)
+            self.assertEqual(status['expires_at'], issued_at + 7 * 86400)
+        with patch('backend.store.time.time', return_value=issued_at + 7 * 86400 - 1):
+            self.assertIsNotNone(self.store.authenticate(token, self.settings.resource))
+        with patch('backend.store.time.time', return_value=issued_at + 7 * 86400):
+            self.assertIsNone(self.store.authenticate(token, self.settings.resource))
+            self.assertFalse(self.store.mcp_token_status(bob['id'], self.settings.resource)['active'])
+
     def test_legacy_mcp_token_and_missing_key_require_explicit_regeneration(self):
         headers = self.web_login('bob')
         token = self.client.post('/api/mcp-token', headers=headers).json()['token']

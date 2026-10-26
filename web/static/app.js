@@ -180,7 +180,7 @@ function renderMCPCredential(){
   $('generate-mcp-token').disabled=value.busy||!state.user;
   $('generate-mcp-token').textContent=value.busy?'处理中…':!value.loaded?'重试连接':value.active?'重置 Token':'生成 Token';
   $('revoke-mcp-token').disabled=!value.active||value.busy;
-  $('mcp-token-status').textContent=value.busy?'处理中…':!value.loaded?'正在读取…':value.active?'有效期至 '+new Date(value.expires*1000).toLocaleDateString('zh-CN',{timeZone:'Asia/Shanghai'}):'尚未生成 Token';
+  $('mcp-token-status').textContent=value.busy?'处理中…':!value.loaded?'正在读取…':value.active?'Token 已就绪':'尚未生成 Token';
 }
 async function updateMCPCredential(method='GET'){
   if(!state.user||mcpCredential.busy)return;
