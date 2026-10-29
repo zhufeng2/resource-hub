@@ -81,6 +81,9 @@ class Store:
                 CREATE TABLE IF NOT EXISTS bindings (
                     id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, provider TEXT NOT NULL,
                     label TEXT NOT NULL, upstream_hash TEXT NOT NULL, created REAL NOT NULL);
+                CREATE TABLE IF NOT EXISTS quark_accounts (
+                    user_id INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, ciphertext BLOB NOT NULL,
+                    allow_writes INTEGER NOT NULL DEFAULT 0, updated REAL NOT NULL);
             ''')
             columns = {r['name'] for r in db.execute('PRAGMA table_info(users)')}
             if 'is_admin' not in columns:
@@ -105,6 +108,51 @@ class Store:
         with self.connection() as db:
             row = db.execute('SELECT * FROM users WHERE id=? AND enabled=1', (user_id,)).fetchone()
             return dict(row) if row else None
+
+    def quark_cipher(self, create=False):
+        # QUARK_SECRET_KEY may be supplied by a secret manager, outside the DB volume.
+        key = os.environ.get('QUARK_SECRET_KEY')
+        if key:
+            return Fernet(key.encode('ascii'))
+        path = self.path.with_name(self.path.name + '.quark.key')
+        if create and not path.exists():
+            # Called under the SQLite write lock, also serializing multiple workers.
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(Fernet.generate_key())
+                stream.flush()
+                os.fsync(stream.fileno())
+        return Fernet(path.read_bytes())
+
+    def quark_account(self, user_id, secret=False):
+        with self.connection() as db:
+            row = db.execute('''SELECT q.* FROM quark_accounts q JOIN users u ON u.id=q.user_id
+                WHERE q.user_id=? AND u.enabled=1''', (user_id,)).fetchone()
+        if not row:
+            return None
+        value = {'id': row['id'], 'updated_at': row['updated']}
+        if secret:
+            payload = json.loads(self.quark_cipher().decrypt(row['ciphertext']))
+            if payload.get('user_id') != user_id or payload.get('binding_id') != row['id']:
+                raise ValueError('credential_owner_mismatch')
+            value['cookie'] = payload['cookie']
+        return value
+
+    def bind_quark(self, user_id, cookie):
+        with self.connection(True) as db:
+            if not db.execute('SELECT 1 FROM users WHERE id=? AND enabled=1', (user_id,)).fetchone():
+                raise ValueError('account_disabled')
+            binding_id = secrets.token_hex(16)
+            encrypted = self.quark_cipher(create=True).encrypt(json.dumps({
+                'user_id': user_id, 'binding_id': binding_id, 'cookie': cookie}).encode())
+            # Rebinding creates a new namespace: old operations cannot run on a new account.
+            db.execute('INSERT OR REPLACE INTO quark_accounts VALUES(?,?,?,?,?)',
+                       (user_id, binding_id, encrypted, 1, time.time()))
+        return self.quark_account(user_id)
+
+    def unbind_quark(self, user_id):
+        with self.connection(True) as db:
+            db.execute('DELETE FROM quark_accounts WHERE user_id=?', (user_id,))
 
     def add_user(self, username, password, limit, is_admin=False):
         if not username or len(username) > 64 or not 12 <= len(password) <= 256 or not 0 <= limit <= 10000:
@@ -132,8 +180,10 @@ class Store:
                     raise ValueError('额度需为 0–10000')
                 db.execute('UPDATE users SET daily_limit=? WHERE id=?', (limit, row['id']))
             if password is not None or enabled is False:
-                for table in ('tokens', 'codes', 'web_sessions'):
-                    db.execute(f'DELETE FROM {table} WHERE user_id=?', (row['id'],))
+                for statement in ('DELETE FROM tokens WHERE user_id=?',
+                                  'DELETE FROM codes WHERE user_id=?',
+                                  'DELETE FROM web_sessions WHERE user_id=?'):
+                    db.execute(statement, (row['id'],))
 
     def users(self):
         with self.connection() as db:
@@ -479,8 +529,11 @@ class Store:
     def cleanup(self):
         now = time.time()
         with self.connection(True) as db:
-            for table in ('tickets', 'codes', 'tokens', 'web_sessions'):
-                db.execute(f'DELETE FROM {table} WHERE expires<?', (now,))
+            for statement in ('DELETE FROM tickets WHERE expires<?',
+                              'DELETE FROM codes WHERE expires<?',
+                              'DELETE FROM tokens WHERE expires<?',
+                              'DELETE FROM web_sessions WHERE expires<?'):
+                db.execute(statement, (now,))
             db.execute('DELETE FROM limits WHERE started<?', (now - 86400,))
             db.execute('DELETE FROM searches WHERE created<?', (now - 31 * 86400,))
             # Keep current-day quota counts but discard old search content after one day.

@@ -8,7 +8,7 @@ import secrets
 import sqlite3
 from urllib.parse import urlsplit
 
-from starlette.responses import FileResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -16,6 +16,7 @@ from backend.errors import SearchFailure
 from backend.service import checkable_url, validate_preferences
 from backend.store import digest
 from backend.upstream import PROVIDERS
+from backend.quark import QuarkError
 
 STATIC = Path(__file__).parent / 'static'
 COOKIE = 'rh_session'
@@ -31,8 +32,23 @@ def reply(data, status=200):
 
 
 class Web:
-    def __init__(self, settings, store, service, upstream):
+    def __init__(self, settings, store, service, upstream, quark=None):
         self.settings, self.store, self.service, self.upstream = settings, store, service, upstream
+        self.quark = quark
+
+    async def quark_account(self, request):
+        user = self.user(request, write=request.method != 'GET')
+        if request.method == 'POST':
+            if not self.store.rate('quark-bind:' + str(user['id']), 10, 300):
+                raise WebError('绑定操作过于频繁，请稍后重试。', 429)
+            data = await self.body(request)
+            # Ownership always comes from the authenticated browser session.
+            if set(data) - {'cookie'}:
+                raise WebError('绑定参数不正确。')
+            return reply(await self.quark.bind(user['id'], data.get('cookie')))
+        if request.method == 'DELETE':
+            self.store.unbind_quark(user['id'])
+        return reply(self.quark.status(user['id']))
 
     def user(self, request, write=False, admin=False):
         user = self.store.web_user(request.cookies.get(COOKIE, ''))
@@ -47,6 +63,12 @@ class Web:
         if not self.store.rate('web:' + digest(ip) + ':' + str(user['id']), 240, 60):
             raise WebError('请求过于频繁，请稍后再试。', 429)
         return user
+
+    async def reveal_quark_cookie(self, request):
+        user = self.user(request, write=True)
+        if await self.body(request):
+            raise WebError('请求参数不正确。')
+        return reply({'cookie': self.quark.saved_cookie(user['id'])})
 
     async def body(self, request):
         try:
@@ -81,7 +103,14 @@ class Web:
         return reply({**data, **self.store.mcp_token_status(user['id'], self.settings.resource, reveal=True)})
 
     async def index(self, request):
-        return FileResponse(STATIC / 'index.html', headers={
+        source = (STATIC / 'index.html').read_text(encoding='utf-8')
+        # Version each asset by content, so a fresh HTML page never reuses stale CSS/JS.
+        def version_asset(match):
+            asset = match.group(2)
+            version = digest((STATIC / asset).read_text(encoding='utf-8'))[:12]
+            return match.group(1) + asset + '?v=' + version + match.group(3)
+        source = re.sub(r'((?:src|href)="/assets/)([A-Za-z0-9_.-]+\.(?:css|js))(")', version_asset, source)
+        return HTMLResponse(source, headers={
             'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff',
             'Referrer-Policy': 'same-origin', 'X-Frame-Options': 'DENY',
             'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"})
@@ -317,6 +346,8 @@ class Web:
                 return await handler(request)
             except WebError as exc:
                 return reply({'error': exc.message}, exc.status)
+            except QuarkError as exc:
+                return reply({'error': exc.message, 'code': exc.code}, exc.status)
             except (ValueError, sqlite3.IntegrityError):
                 return reply({'error': '配置格式不正确、账号已存在或密码长度不足 12 位。'}, 400)
             except SearchFailure as exc:
@@ -333,6 +364,8 @@ class Web:
             ('/api/catalog', self.catalog, ['GET']), ('/api/password', self.password, ['POST']),
             ('/api/connections/revoke', self.revoke_connections, ['POST']),
             ('/api/mcp-token', self.mcp_token, ['GET', 'POST', 'DELETE']),
+            ('/api/quark-account', self.quark_account, ['GET', 'POST', 'DELETE']),
+            ('/api/quark-account/reveal', self.reveal_quark_cookie, ['POST']),
             ('/api/users', self.users, ['GET', 'POST', 'PATCH']),
             ('/api/bindings', self.bindings, ['GET', 'POST']),
             ('/api/bindings/{id}', self.binding_action, ['POST']), ('/api/check', self.check_links, ['POST'])]

@@ -157,3 +157,28 @@ docker compose --project-directory backend --env-file backend/.env -f backend/co
 ## 安全维护
 
 更新后核对[安全审查记录](../docs/SECURITY_REVIEW.md)。Compose 为应用和代理配置日志轮转，每个容器最多保留 3 个 10 MB 日志文件。首次应用此 Compose 变更需运行当前部署使用的完整 `docker compose ... up -d` 命令，`update.sh` 只更新应用容器，不会重建代理。
+
+## 夸克凭据与运行环境
+
+服务复用 `backend/quark_client/` 中的用户接口库，每次调用启动独立 Node.js 进程；凭据通过标准输入传递，不放入命令行、工具参数或日志。Docker 构建已包含 Node.js；本地运行需 Node.js 18+，可用 `QUARK_NODE_BINARY` 指定管理员控制的可执行文件路径。
+
+夸克 Cookie 使用 Fernet 加密保存在 `quark_accounts` 表，用户 ID 来自已验证的网页登录会话或 MCP Token。优先通过环境变量 `QUARK_SECRET_KEY` 注入独立 Fernet 密钥（可运行 `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 生成并保存至服务器秘密配置，勿提交版本库）。未配置时首次绑定会生成数据库旁的 `<数据库名>.quark.key`，权限 0600；生产环境建议独立秘密管理。密钥丢失或更换后旧绑定无法解密，需要重新绑定；不回退共享 Cookie。备份加密数据库与密钥时应分开保管。
+
+操作记录位于数据库旁 `quark-operations/<user_id>/<binding_id>/<request_id>.json`，不含 Cookie、分享访问令牌或文件转存令牌。每次重新绑定产生新的绑定 ID，不能将旧任务带到新账号。请求编号只接受受限字符，不能指定任意记录路径或上游任务 ID。
+
+`.lock` 文件负责跨进程互斥。正常结束自动释放；进程被杀或执行超时可能留下锁，此时返回 operation_busy，管理员先核对该记录、进程与实际网盘结果，再决定如何恢复；不得自动清锁、删除记录或换编号重新转存。记录提交意图但没有任务 ID 时同样停止，不假设提交失败。锁和任务记录需要随数据卷持久化，不应按搜索记录的 24 小时策略清理。
+
+解绑只删除当前加密凭据，不撤销夸克登录 Cookie、不取消已经提交的上游任务。操作记录保留用于核对，管理员可在确认所有关联任务已结束后按自己的保留策略清理。站点/代理/APM 禁止记录绑定接口请求体和认证请求头。已有 OAuth scope 名称 `search` 为兼容而保留，夸克读写访问由用户主动绑定授予；不能把该 scope 名称解释为整个 MCP 永远只读。
+
+Cookie 显示/复制使用 POST `/api/quark-account/reveal`，要求网页登录、同源、CSRF，始终从会话取得用户 ID；响应 no-store，不允许指定其他用户。GET 状态和 MCP 工具仍不返回 Cookie。
+
+
+## 本轮上线前确认
+
+镜像从 `backend/requirements.lock` 安装本轮验证过的固定依赖；`requirements.txt` 保留顶层依赖声明，更新依赖后应重建锁文件、扫描并回归，不能只改声明文件。非 Docker 运行使用 Python 3.12、Node.js 18+，同样安装锁文件。
+
+按上文配置 backend/.env 后，先运行 `docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml config --quiet`，再按当前部署所需的覆盖文件启动构建。随后核对健康检查、HTTPS、OAuth/MCP、一次实际搜索及独立测试目录的网盘操作。使用 PanSou 覆盖文件时，这些命令都要带上 `-f backend/compose.pansou.yaml`。
+
+不要复制本地 `.cache/dev-preview` 数据库到生产环境，其中是已知密码的预览管理员和测试授权。已有生产数据必须备份再迁移，沿用对应加密密钥；新生产账号独立创建并重新绑定夸克。应用8000端口不要映射公网，保持单进程运行，代理/APM不记录凭据请求体。
+
+完整检查结果及限制见 [上线安全审查](../docs/SECURITY_REVIEW.md)。本轮没有代为部署服务器，Docker构建、证书与真实生产上游验证须在服务器完成。

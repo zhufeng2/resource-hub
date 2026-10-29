@@ -87,6 +87,20 @@ class WebTests(unittest.TestCase):
         self.web_login('bob')
         self.assertIn('error', self.client.get('/api/results/' + search_id).json())
 
+    def test_page_versions_assets_by_content_to_prevent_stale_styles(self):
+        directory = self.settings.database.parent / 'asset-version-test'
+        directory.mkdir()
+        (directory / 'index.html').write_text('<link rel="stylesheet" href="/assets/glass.css">', encoding='utf-8')
+        stylesheet = directory / 'glass.css'
+        stylesheet.write_text('button {color:blue}', encoding='utf-8')
+        with patch('web.app.STATIC', directory):
+            first = self.client.get('/profile')
+            self.assertIn('/assets/glass.css?v=', first.text)
+            self.assertEqual(first.headers['cache-control'], 'no-cache')
+            stylesheet.write_text('button {color:white}', encoding='utf-8')
+            second = self.client.get('/profile')
+            self.assertNotEqual(first.text, second.text)
+
     def test_admin_permissions_preferences_and_revocation(self):
         headers = self.web_login('bob')
         self.assertEqual(self.client.get('/api/users').status_code, 403)

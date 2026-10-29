@@ -1,3 +1,11 @@
+# Send only runtime source to the Docker builder, never research/browser profiles.
+**
+!backend/
+!backend/**
+!web/
+!web/**
+!gpt/
+!gpt/**
 .git
 .env
 .env.*
@@ -15,6 +23,14 @@ skill-backups
 node_modules
 
 **/*.mcp.key
+**/*.quark.key
+**/quark-operations
+**/*.pem
+**/*.p12
+**/cookie*.txt
+**/.local
+**/*.jsonl
+**/*.test.cjs
 **/.env
 **/.env.*
 **/.DS_Store

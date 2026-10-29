@@ -43,7 +43,7 @@ def login_page(ticket, message='', status=200):
 <link rel="stylesheet" href="/assets/style.css"><link rel="stylesheet" href="/assets/glass.css"><body>
 <header class="header"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>Resource Hub<span class="brand-caption">资源检索</span></span></a></header>
 <main><section class="login-view"><div class="login-card"><span class="eyebrow">CONNECT YOUR WORKSPACE</span><h1>连接资源搜索</h1>
-<p class="muted">登录后，允许 ChatGPT 使用此账号搜索资源</p>
+<p class="muted">登录后，允许客户端使用此账号搜索资源。若你在个人主页绑定夸克，客户端也可按绑定权限读取网盘；绑定后可按你的要求转存和创建目录。</p>
 <p class="form-error" role="alert">{message}</p><form method="post" action="/oauth/authorize" data-login-form>
 <input type="hidden" name="ticket" value="{ticket}">
 <label for="username">账号</label><input id="username" name="username" autocomplete="username" maxlength="64" required>

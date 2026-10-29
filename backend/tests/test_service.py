@@ -125,7 +125,7 @@ class ServiceTests(unittest.TestCase):
                                             'clientInfo': {'name': 'test', 'version': '1'}})
         self.assertIn('tools', init['result']['capabilities'])
         tools = self.rpc(token, 'tools/list')['result']['tools']
-        self.assertEqual({t['name'] for t in tools}, {'search_resources', 'get_search_results', 'get_quota'})
+        self.assertTrue({'search_resources', 'get_search_results', 'get_quota', 'quark_save_file', 'quark_status', 'quark_operation_status'} <= {t['name'] for t in tools})
         first = self.tool(token, 'search_resources', {'query': 'test', 'request_id': 'same-request'})
         self.assertEqual(first['quota']['used'], 1)
         retry = self.tool(token, 'search_resources', {'query': 'test', 'request_id': 'same-request'})

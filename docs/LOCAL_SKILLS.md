@@ -1,17 +1,8 @@
 # 本地 Skill 安装与使用
 
-本地 Skill 让支持技能目录的助手完成资源搜索、链接与文件核验，以及夸克转存和文件管理。仅使用网页搜索无需安装。
+本地 Skill 负责资源筛选、系列完整性和归档流程；搜索与网盘操作统一通过 Resource Hub MCP。
 
-[返回项目首页](../README.md) · [网页使用](../web/README.md) · [MCP 接入](../gpt/README.md)
-
-## 环境要求
-
-- Python 3.10 或更新版本。
-- 使用夸克官方工具时需要 Node.js 16 或更新版本，安装脚本会检查环境。
-- 可以加载本地 Skill 的助手。
-- 已连接 Resource Hub MCP 的助手及站点账号；涉及目录核验或转存时还需夸克网盘账号。
-
-## 安装
+## 安装与更新
 
 ```bash
 git clone https://github.com/zhufeng2/resource-hub.git
@@ -19,72 +10,25 @@ cd resource-hub
 python3 install.py
 ```
 
-默认安装 `resource-hub` 和 `quarkclouddrive` 两个 Skill 到 `$CODEX_HOME/skills`，未设置 `CODEX_HOME` 时使用 `~/.codex/skills`。
+默认仅安装 resource-hub 到 `$CODEX_HOME/skills`，未设置时使用 `~/.codex/skills`。可用 `--skills-dir /path/to/skills` 指定目录；已有安装使用 `--update`，先备份再替换，移除旧运行脚本。更新后新建聊天加载。安装不再分发或更新官方 quarkclouddrive Skill，也不会擅自卸载设备上已有的独立官方工具或撤销其授权。
 
-指定其他助手的技能目录：
+## 连接与绑定
 
-```bash
-python3 install.py --skills-dir /path/to/skills
-```
+在助手中连接站点 `/mcp` 地址，通过 OAuth 或 Authorization Bearer Token 认证。使用 get_quota 免费检查连接。用户在网站“个人主页 → 安全与连接”绑定夸克 Cookie，即可读取网盘、转存和创建目录。不要在聊天、工具参数或本地 Skill 配置中填写 Cookie。
 
-安装后，在助手中新建对话以加载技能。Windows 可根据环境将 `python3` 替换为 `python` 或 `py -3`，路径含空格时加引号。
+本地无需 Node.js 或夸克运行工具；Node.js 由服务端维护。安装器需要 Python 3.10+；流程说明没有本地运行脚本、缓存或账号配置。MCP 不可用时提示重新连接，不回退到共享账号或官方 CLI。
 
-## 连接 MCP 搜索服务
-
-在当前助手中连接 Resource Hub MCP。项目测试站入口为 `https://pan.sysscitech.com/mcp`，自建站点使用自己的域名加 `/mcp`。按客户端支持的方式完成 OAuth 授权或配置管理员签发的 MCP Bearer Token，具体见 [MCP 接入指南](../gpt/README.md)。凭据仅在客户端授权界面或本机配置中填写，不发送到聊天。
-
-连接后调用 `get_quota` 免费验证认证与额度；实际搜索用 `search_resources`，后续翻页用 `get_search_results`。每次成功新搜索计次，零结果也计次；翻页不扣新额度。连接检查成功不代表上游搜索已成功。
-
-本地 Skill 不再需要 PanSou 地址、账号密码或 `PANSOU_*` 环境变量。内部上游凭据由服务器维护；MCP 不可用时提示重新连接，不回退旧 PanSou 地址。旧搜索脚本保留给兼容调用方，不能用其 setup/auth-test 验证新站 MCP。已有本机 PanSou 配置不会自动删除。
-
-Skill 的核验、筛选和转存规则见 [resource-hub 技能规范](../skills/resource-hub/SKILL.md)。
-
-## 授权夸克网盘
-
-在助手中提出网盘操作请求，按官方工具提示完成授权。首次使用需要下载运行工具；安装定义文件不会自动登录网盘。
-
-也可以在 macOS/Linux 终端手动安装运行工具：
-
-```bash
-cd ~/.codex/skills/quarkclouddrive
-bash scripts/install.sh
-```
-
-使用自定义路径时替换目录。官方工具的安装、授权和使用要求见 [夸克网盘 Skill](../skills/quarkclouddrive/SKILL.md)。授权信息只保存在执行工具的设备上。
-
-## 示例请求
+## 使用
 
 - “搜索某部电影，列出合适的夸克链接。”
-- “核验这个分享是否包含完整剧集。”
-- “搜索这个系列的电影并转存到夸克。”
-- “只补齐缺少的几部，保存到 AI转存/系列名。”
-- “查找我网盘里已保存的文件。”
+- “检查这个分享是否包含完整剧集。”
+- “把这些选中的文件转存到 AI转存/作品名。”
+- “查看我网盘里保存的文件。”
 
-默认搜索夸克资源。只要求搜索时不会写入网盘；明确要求转存后，才调用官方工具保存。默认保存到 `AI转存/<作品名>`；系列使用 `AI转存/<系列>/<作品或季>`。请求中可指定其他目录和范围。
+Skill 使用 quark_share_files 核验分享，quark_list_files 定位目录，quark_create_folder 创建缺失目录，quark_save_entries 批量转存明确文件及目录，quark_rename 调整名称，quark_move 移动文件及目录。写工具默认预览，用户已明确授权时 execute=true；每个操作记录唯一 request_id，超时先查 quark_operation_status，再用原参数、原 ID 续查。
 
-链接有效、读取到目录、内容匹配和转存成功是不同状态。助手应根据实际核验和官方返回结果说明完成情况，不仅依据分享标题判断。
+只有 phase=verified 才报告完成。当前不支持上传或删除；观看指南交付本地文件并注明未上传。个人搜索与建目录尚未真实接口验证，不能将离线测试通过说成实测完成。
 
-## 更新
+搜索及翻页规则见 [MCP 接入指南](../gpt/README.md)，流程见 [resource-hub 技能](../skills/resource-hub/SKILL.md)。
 
-在仓库目录执行：
-
-```bash
-git pull --ff-only
-python3 install.py --update
-```
-
-首次安装使用了自定义目录时，更新时也要带上相同的 `--skills-dir` 参数。更新会先备份已安装目录到技能目录旁的 `skill-backups/`，再合并文件，保留本机运行工具及账号配置。备份可能含凭据，应限制访问。更新后新建对话加载新版本。
-
-## 常见问题
-
-**已经登录网页，为什么助手还要求连接？**
-
-本地 Skill 搜索使用当前助手已连接的 Resource Hub MCP；网页登录不会自动授权 MCP，需在助手中完成连接。分享目录核验及网盘操作另用夸克官方授权。
-
-**搜索成功但不能转存？**
-
-检查夸克运行工具是否安装、账号是否授权，以及分享是否仍可访问。
-
-**找不到 Skill 或脚本？**
-
-检查安装输出中的实际路径，以及助手配置的技能目录。默认路径仅是示例，不适用于所有客户端。
+旧 Skill 的搜索/检链/缓存/进度脚本及兼容测试已移除，业务实现只维护在 MCP 服务端。此目录仅保留 MCP 调用流程说明。

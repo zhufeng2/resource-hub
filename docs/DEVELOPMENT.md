@@ -8,11 +8,10 @@
 | --- | --- |
 | `web/app.py` | 网页路由、会话与同源 JSON API |
 | `web/static/` | HTML、CSS、JavaScript 与 favicon |
-| `gpt/server.py` | MCP 搜索、结果与额度工具 |
+| `gpt/server.py` | MCP 搜索、结果、额度及夸克工具 |
 | `gpt/oauth.py` | OAuth 注册、授权、令牌交换和元数据 |
 | `backend/` | 账号、存储、上游适配、搜索及额度逻辑 |
-| `skills/resource-hub/` | 本地资源搜索、核验与任务流程 |
-| `skills/quarkclouddrive/` | 夸克官方技能定义、参考文档及安装脚本 |
+| `skills/resource-hub/` | 仅 MCP 流程说明，无本地运行脚本 |
 | `install.py` | 本地 Skill 安装和更新 |
 | `update.sh` | Linux 服务器拉取、构建与更新 |
 
@@ -20,12 +19,12 @@
 
 ## 本地启动
 
-需要 Python 3.10+。在仓库根目录创建虚拟环境并安装依赖：
+在线服务使用 Python 3.12（与 Docker 一致）。在仓库根目录创建虚拟环境并安装依赖：
 
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install -r backend/requirements.txt
+python -m pip install -r backend/requirements.lock
 ```
 
 通过当前终端或开发环境注入配置。下面是仅绑定本机的开发地址：
@@ -114,8 +113,21 @@ node --check web/static/controls.js
 
 结构样式位于 `style.css` 与 `interface.css`，最终视觉样式位于 `glass.css`。修改前查看[界面设计规范](../web/design/glassmorphism.md)，避免单个组件覆盖后造成颜色、透明度或对齐方式不一致。
 
-本地 Skill 的执行协议位于各自 `SKILL.md`，不是普通网页帮助文档。修改其行为时应核对对应脚本和工作流测试。第三方文件的来源与范围见 [THIRD_PARTY.md](../THIRD_PARTY.md)。
+MCP 流程说明位于 `skills/resource-hub/SKILL.md`，旧 Skill 的脚本和测试已经移除；业务实现只维护在服务端。第三方文件的来源与范围见 [THIRD_PARTY.md](../THIRD_PARTY.md)。
 
 ## 审计与缓存
 
 安全边界和部署限制见[安全审查记录](SECURITY_REVIEW.md)。本地 `.cache/*-qa/`、`.cache/npm/`、`.cache/ms-playwright/` 和 `__pycache__/` 可在测试结束后删除。`node_modules/` 是可重新安装的开发依赖。不要整目录删除 `.cache/`：其中可能有开发数据库，`.cache/update/` 还存放部署锁、版本记录与迁移备份。不要把 `docker compose down -v` 或 `docker volume prune` 当作清理缓存使用。
+
+
+## 夸克 MCP 开发验证
+
+`backend/quark.py` 按已验证的用户身份取出加密凭据，以标准输入调用 `backend/quark_client/runner.cjs`。Node.js 18+ 由服务端提供；本地流程说明不执行脚本。网页 `/api/quark-account` 的 POST/DELETE 要求登录、同源和 CSRF，GET 只返回绑定状态。
+
+```bash
+python -m unittest discover -s backend/tests -t .
+node --test backend/quark_client/runner.test.cjs backend/quark_client/workflows/manage.test.cjs backend/quark_client/workflows/reset-progress.test.cjs
+node web/tests/quark-account.cjs
+```
+
+浏览器测试需要 Playwright 和已安装 Chrome，只使用模拟页面与临时凭据，不访问真实网盘。手机登录回归仍用 `web/tests/mobile-login.cjs`。测试通过不代表真实搜索、建目录或转存完成；实际接口验证应另有明确范围和证据。

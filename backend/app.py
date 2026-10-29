@@ -13,6 +13,7 @@ from gpt.server import bearer, build_server
 from .store import Store
 from .service import SearchService
 from .upstream import Upstream
+from .quark import QuarkService
 from web.app import Web
 
 
@@ -70,7 +71,8 @@ def create_app(settings=None, backend=None, upstream=None):
     store = Store(settings.database)
     upstream = upstream or Upstream()
     service = SearchService(settings, store, backend or upstream)
-    mcp, transport = build_server(settings, store, service)
+    quark = QuarkService(store)
+    mcp, transport = build_server(settings, store, service, quark)
 
     async def janitor():
         while True:
@@ -94,11 +96,12 @@ def create_app(settings=None, backend=None, upstream=None):
         return JSONResponse({'status': 'ok'})
 
     oauth = OAuth(settings, store)
-    web = Web(settings, store, service, upstream)
+    web = Web(settings, store, service, upstream, quark)
     app = Starlette(routes=[*web.routes(), Route('/healthz', health), *oauth.routes(),
                             Mount('/', app=transport)], lifespan=lifespan)
     app.state.store, app.state.settings, app.state.mcp = store, settings, mcp
     app.state.service, app.state.upstream = service, upstream
+    app.state.quark = quark
     app.add_middleware(Guard, settings=settings, store=store)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=[urlsplit(settings.base_url).hostname])
     return app

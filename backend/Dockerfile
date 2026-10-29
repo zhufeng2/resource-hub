@@ -2,8 +2,10 @@ FROM public.ecr.aws/docker/library/python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HOME=/home/service \
     DATABASE_PATH=/data/service.sqlite3
 WORKDIR /app
-COPY backend/requirements.txt /app/backend/requirements.txt
-RUN pip install --no-cache-dir -r backend/requirements.txt \
+COPY backend/requirements.lock /app/backend/requirements.lock
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir -r backend/requirements.lock \
     && useradd --uid 10001 --create-home service \
     && mkdir /data && chown service:service /data
 COPY backend /app/backend
