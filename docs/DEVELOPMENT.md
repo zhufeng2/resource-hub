@@ -2,6 +2,8 @@
 
 面向修改网页、搜索服务和本地 Skill 的贡献者。在线使用见[网页指南](../web/README.md)，正式部署见[部署指南](../backend/README.md)。
 
+待开发的页面与功能见[开发规划](ROADMAP.md)。
+
 ## 项目结构
 
 | 目录或文件 | 用途 |
@@ -117,7 +119,7 @@ MCP 流程说明位于 `skills/resource-hub/SKILL.md`，旧 Skill 的脚本和�
 
 ## 审计与缓存
 
-安全边界和部署限制见[安全审查记录](SECURITY_REVIEW.md)。本地 `.cache/*-qa/`、`.cache/npm/`、`.cache/ms-playwright/` 和 `__pycache__/` 可在测试结束后删除。`node_modules/` 是可重新安装的开发依赖。不要整目录删除 `.cache/`：其中可能有开发数据库，`.cache/update/` 还存放部署锁、版本记录与迁移备份。不要把 `docker compose down -v` 或 `docker volume prune` 当作清理缓存使用。
+安全边界和部署限制见[部署指南](../backend/README.md)。本地 `.cache/*-qa/`、`.cache/npm/`、`.cache/ms-playwright/` 和 `__pycache__/` 可在测试结束后删除。`node_modules/` 是可重新安装的开发依赖。不要整目录删除 `.cache/`：其中可能有开发数据库，`.cache/update/` 还存放部署锁、版本记录与迁移备份。不要把 `docker compose down -v` 或 `docker volume prune` 当作清理缓存使用。
 
 
 ## 夸克 MCP 开发验证

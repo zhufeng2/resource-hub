@@ -83,7 +83,7 @@
 
 ## 其他入口
 
-网页提供搜索和结果管理。需要在助手里搜索，请阅读 [MCP 接入指南](../gpt/README.md)；需要夸克转存，可通过 MCP 直接操作，或安装[本地 Skill](../docs/LOCAL_SKILLS.md)编排流程。
+网页提供搜索和结果管理。需要在助手里搜索，请阅读 [MCP 接入指南](../gpt/README.md)；需要夸克转存，可通过 MCP 直接操作，或使用[本地 Skill](../skills/resource-hub/SKILL.md)编排流程。
 
 ## 绑定自己的夸克网盘
 

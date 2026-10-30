@@ -2,7 +2,7 @@
 
 搜索公开的网盘分享，整理搜索结果，并通过 MCP 将选中的资源保存到各自绑定的夸克网盘。
 
-**[访问测试网站](https://pan.sysscitech.com/)** · [网页使用](web/README.md) · [MCP 接入](gpt/README.md) · [本地 Skill 安装](docs/LOCAL_SKILLS.md) · [自行部署](backend/README.md)
+**[访问测试网站](https://pan.sysscitech.com/)** · [网页使用](web/README.md) · [MCP 接入](gpt/README.md) · [自行部署](backend/README.md)
 
 ## 选择使用方式
 
@@ -36,7 +36,7 @@
 | --- | --- |
 | [网页使用指南](web/README.md) | 登录、搜索设置、结果、个人主页、常见问题 |
 | [MCP 接入指南](gpt/README.md) | OAuth、Bearer Token、工具参数和额度规则 |
-| [本地 Skill 安装与使用](docs/LOCAL_SKILLS.md) | 环境要求、安装、搜索配置、夸克授权、更新 |
+| [Skill 使用流程](skills/resource-hub/SKILL.md) | MCP 资源筛选、转存与文件整理流程 |
 | [服务器部署与维护](backend/README.md) | Docker 部署、账号管理、更新、备份和故障排查 |
 | [连接已有 PanSou](backend/EXISTING_PANSOU.md) | Docker 网络、上游认证及旧站入口迁移 |
 | [开发指南](docs/DEVELOPMENT.md) | 项目结构、本地启动、测试及网页回归检查 |
@@ -50,4 +50,4 @@ git clone https://github.com/zhufeng2/resource-hub.git
 cd resource-hub
 ```
 
-使用在线站点无需下载代码。安装 Skill 请继续阅读[安装指南](docs/LOCAL_SKILLS.md)；搭建自己的站点请阅读[部署指南](backend/README.md)。
+使用在线站点无需下载代码。搭建自己的站点请阅读[部署指南](backend/README.md)。

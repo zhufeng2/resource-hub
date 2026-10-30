@@ -88,7 +88,7 @@ docker compose --project-directory backend --env-file backend/.env -f backend/co
 - “查看上一轮搜索的下一页。”
 - “我今天还剩多少次搜索？”
 
-翻页应复用已有 `search_id`，不应通过重新搜索实现。MCP 可直接读取已绑定夸克账号、建目录、改名、移动以及批量转存文件和目录；[本地 Skill](../docs/LOCAL_SKILLS.md) 提供系列筛选和归档流程。
+翻页应复用已有 `search_id`，不应通过重新搜索实现。MCP 可直接读取已绑定夸克账号、建目录、改名、移动以及批量转存文件和目录；[本地 Skill](../skills/resource-hub/SKILL.md) 提供系列筛选和归档流程。
 
 ## 额度规则
 

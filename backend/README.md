@@ -156,7 +156,7 @@ docker compose --project-directory backend --env-file backend/.env -f backend/co
 
 ## 安全维护
 
-更新后核对[安全审查记录](../docs/SECURITY_REVIEW.md)。Compose 为应用和代理配置日志轮转，每个容器最多保留 3 个 10 MB 日志文件。首次应用此 Compose 变更需运行当前部署使用的完整 `docker compose ... up -d` 命令，`update.sh` 只更新应用容器，不会重建代理。
+Compose 为应用和代理配置日志轮转，每个容器最多保留 3 个 10 MB 日志文件。首次应用此 Compose 变更需运行当前部署使用的完整 `docker compose ... up -d` 命令，`update.sh` 只更新应用容器，不会重建代理。
 
 ## 夸克凭据与运行环境
 
@@ -181,4 +181,4 @@ Cookie 显示/复制使用 POST `/api/quark-account/reveal`，要求网页登录
 
 不要复制本地 `.cache/dev-preview` 数据库到生产环境，其中是已知密码的预览管理员和测试授权。已有生产数据必须备份再迁移，沿用对应加密密钥；新生产账号独立创建并重新绑定夸克。应用8000端口不要映射公网，保持单进程运行，代理/APM不记录凭据请求体。
 
-完整检查结果及限制见 [上线安全审查](../docs/SECURITY_REVIEW.md)。本轮没有代为部署服务器，Docker构建、证书与真实生产上游验证须在服务器完成。
+本轮没有代为部署服务器，Docker构建、证书与真实生产上游验证须在服务器完成。
