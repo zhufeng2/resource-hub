@@ -32,6 +32,46 @@ class QuarkService:
         self.runner = Path(__file__).parent / 'quark_client' / 'runner.cjs'
         self.slots = asyncio.Semaphore(4)
         self.inflight = {}
+        self.reset_jobs = {}
+        self.closing = False
+
+    async def close(self):
+        self.closing = True
+        tasks = [job['task'] for job in self.reset_jobs.values() if job.get('task')]
+        # Let the current bounded slice persist and release its lock on shutdown.
+        try:
+            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 50)
+        except asyncio.TimeoutError:
+            pass
+
+    async def continue_reset(self, user_id, account_id, args, journal, job):
+        """Continue authorized slices independently of the originating HTTP request."""
+        stagnant = 0
+        deadline = asyncio.get_running_loop().time() + 1800
+        try:
+            for _ in range(600):
+                await asyncio.sleep(1)
+                if self.closing or asyncio.get_running_loop().time() >= deadline:
+                    return
+                account = self.store.quark_account(user_id, secret=True)
+                if not account or account['id'] != account_id:
+                    return
+                before = (job['result'].get('verified'), job['result'].get('skipped'))
+                result = await self.run(account['cookie'], 'reset_progress', args, journal, True)
+                job['result'] = result
+                if result.get('error') or result.get('phase') != 'in_progress':
+                    return
+                after = (result.get('verified'), result.get('skipped'))
+                stagnant = stagnant + 1 if before == after else 0
+                if stagnant >= 3:
+                    return
+        except QuarkError as exc:
+            job['result'] = {**job['result'], 'error': exc.code, 'message': exc.message}
+        except (InvalidToken, OSError, ValueError, KeyError, TypeError, AttributeError):
+            job['result'] = {**job['result'], 'error': 'reset_paused',
+                             'message': '后台任务暂停，请核对绑定和原操作记录。'}
+        finally:
+            job['running'] = False
 
     @asynccontextmanager
     async def available_slot(self):
@@ -72,7 +112,7 @@ class QuarkService:
             except OSError:
                 raise QuarkError('runtime_unavailable', '夸克操作运行环境不可用，请联系管理员。', 503) from None
             try:
-                stdout, _ = await asyncio.wait_for(process.communicate(json.dumps(payload).encode()), 45)
+                stdout, _ = await asyncio.wait_for(process.communicate(json.dumps(payload, ensure_ascii=False).encode()), 45)
             except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
                 if process.returncode is None:
                     process.kill()
@@ -116,14 +156,46 @@ class QuarkService:
             return {'error': 'quark_not_bound', 'message': '请在个人主页的安全与连接中绑定夸克账号。'}
         try:
             journal = None
-            if action in ('save', 'operation', 'create_folder', 'save_entries', 'rename', 'move', 'reset_progress'):
+            if action in ('save', 'operation', 'create_folder', 'create_text', 'save_entries', 'rename', 'move', 'reset_progress'):
                 journal = self.journal(user_id, account['id'], request_id)
+            key = (user_id, account['id'], request_id)
+            existing = self.reset_jobs.get(key)
+            if existing and (action == 'operation' or action == 'reset_progress' and execute):
+                if action == 'reset_progress' and existing['args'] != args:
+                    return {'error': 'plan_conflict', 'request_id': request_id}
+                if existing['running'] or action == 'operation':
+                    return {**existing['result'], 'request_id': request_id,
+                            'background_running': existing['running'],
+                            'message': ('后台自动继续处理；稍后查询进度即可。' if existing['running']
+                                        else existing['result'].get('message', '后台任务已停止。'))}
+            reset_job = None
+            if action == 'reset_progress' and execute:
+                active = [k for k, j in self.reset_jobs.items() if j['running']]
+                if len(active) >= 2 or any(k[0] == user_id for k in active):
+                    return {'error': 'quark_busy', 'message': '已有归零任务运行，请稍后查询进度。'}
+                # Reserve before the first await, including the initial slice.
+                reset_job = {'args': dict(args), 'running': True,
+                             'result': {'phase': 'in_progress', 'message': '正在核对指定目录。'}}
+                # Keep completed results on disk; bound the in-memory job registry.
+                self.reset_jobs = {k: j for k, j in self.reset_jobs.items() if j['running']}
+                self.reset_jobs[key] = reset_job
             if action == 'operation' and not journal.is_file():
                 return {'error': 'operation_not_found', 'message': '当前绑定下没有这条操作记录。'}
             self.inflight[user_id] = self.inflight.get(user_id, 0) + 1
             try:
                 result = await self.run(account['cookie'], action, args, journal, execute)
+                if reset_job:
+                    reset_job['result'] = result
+                    if result.get('phase') == 'in_progress' and not result.get('error'):
+                        reset_job['task'] = asyncio.create_task(self.continue_reset(
+                            user_id, account['id'], dict(args), journal, reset_job))
+                        result = {**result, 'background_running': True,
+                                  'message': '后台自动继续处理；用 quark_operation_status 查询，无需逐批调用归零工具。'}
+                    else:
+                        reset_job['running'] = False
             finally:
+                if reset_job and not reset_job.get('task'):
+                    reset_job['running'] = False
                 self.inflight[user_id] -= 1
                 if not self.inflight[user_id]:
                     del self.inflight[user_id]

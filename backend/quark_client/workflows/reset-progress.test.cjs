@@ -53,15 +53,15 @@ test('delayed progress readback is not treated as reset success, and does not tr
  assert.equal((await resetFolderProgress(f.client,f.args,f.journal,true,f.options)).phase,'verified');
  assert.equal(f.reports.length,1);
 });
-test('large series resumes in slices of five without changing the selected scope',async t=>{
- const f=fixture(t,6);
+test('large series uses bounded parallel workers and handles more than five videos',async t=>{
+ const f=fixture(t,120);
  const first=await resetFolderProgress(f.client,f.args,f.journal,true,f.options);
- assert.equal(first.phase,'in_progress');assert.equal(first.verified,5);
+ assert.equal(first.phase,'in_progress');assert.equal(first.verified,100);
  const second=await resetFolderProgress(f.client,f.args,f.journal,true,f.options);
- assert.equal(second.phase,'verified');assert.equal(second.verified,6);assert.equal(f.reports.length,6);
+ assert.equal(second.phase,'verified');assert.equal(second.verified,120);assert.equal(f.reports.length,120);
 });
 test('a file moved outside the selected folder is not reset during continuation',async t=>{
- const f=fixture(t,6);await resetFolderProgress(f.client,f.args,f.journal,true,f.options);
+ const f=fixture(t,6);f.options.maxItems=5;await resetFolderProgress(f.client,f.args,f.journal,true,f.options);
  f.files.v5.pdir_fid='outside';f.files.outside={fid:'outside',file_name:'Other',file_type:0,pdir_fid:'0'};
  const result=await resetFolderProgress(f.client,f.args,f.journal,true,f.options);
  assert.equal(result.phase,'scope_changed');assert.equal(f.reports.length,5);
@@ -70,4 +70,15 @@ test('unknown duration is reported as partial rather than claiming all videos re
  const f=fixture(t,1);delete f.files.v0.duration;
  const result=await resetFolderProgress(f.client,f.args,f.journal,true,f.options);
  assert.equal(result.phase,'partial');assert.equal(result.skipped,1);assert.equal(f.reports.length,0);
+});
+
+test('parallel failures drain workers before releasing the operation lock and never duplicate reports',async t=>{
+ const f=fixture(t,8);let active=0,max=0;
+ const original=f.client.playback.setPosition;
+ f.client.playback.setPosition=async a=>{active++;max=Math.max(max,active);await new Promise(r=>setTimeout(r,5));active--;await original(a);if(a.fid==='v0')throw new Error('ack lost');};
+ await assert.rejects(resetFolderProgress(f.client,f.args,f.journal,true,f.options));
+ assert.equal(active,0);assert.ok(max<=3);assert.ok(max>1);
+ f.client.playback.setPosition=original;
+ assert.equal((await resetFolderProgress(f.client,f.args,f.journal,true,f.options)).phase,'verified');
+ assert.equal(new Set(f.reports.map(r=>r.fid)).size,f.reports.length);
 });

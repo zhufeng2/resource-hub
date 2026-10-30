@@ -8,6 +8,7 @@ const { saveOneFile } = require('./workflows/save-share.cjs');
 const { manage, saveEntries } = require('./workflows/manage.cjs');
 const { resetFolderProgress, resetSummary } = require('./workflows/reset-progress.cjs');
 const {writeJournal} = require('./journal.cjs');
+const {createText} = require('./workflows/create-text.cjs');
 
 function page(result, args) {
   const list = result.data?.list;
@@ -46,12 +47,14 @@ async function dispatch(input, createClient = options => new QuarkClient(options
       let status = r.taskStatus ?? null;
       if (r.taskId && r.phase !== 'verified') status = (await client.tasks.get(r.taskId)).data?.status ?? null;
       return { phase: r.phase, task_status: status, file: r.savedFile || null, files: r.savedFiles || null,
+        content_verified: r.kind==='text' ? r.phase==='verified' : undefined,
         verification_scope: r.verificationScope, descendants_verified: r.descendantsVerified,
         destination: r.destination, verified: r.phase === 'verified',
         locked: fs.existsSync(input.journal + '.lock'),
         message: status === 2 && r.phase !== 'verified' ? '任务结束，需用原参数和请求编号续查并核验；若有遗留锁先由管理员核对。' : undefined };
     }
     case 'save':
+    case 'create_text':
     case 'reset_progress':
     case 'save_entries':
     case 'rename':
@@ -64,6 +67,7 @@ async function dispatch(input, createClient = options => new QuarkClient(options
       try { fd = fs.openSync(lock, 'wx', 0o600); }
       catch { return { error: 'operation_busy', message: '原操作正在进行或中断后待核对，请勿更换编号重提。' }; }
       try {
+        if(input.action==='create_text')return await createText(client,a,input.journal,input.execute===true);
         if(input.action==='reset_progress')return await resetFolderProgress(client,a,input.journal,input.execute===true);
         if (input.action === 'save_entries') return await saveEntries(client, a, input.journal, input.execute === true);
         if (['rename', 'move'].includes(input.action)) return await manage(client, input.action, a, input.journal, input.execute === true);
@@ -99,7 +103,7 @@ async function main() {
   const chunks = []; let size = 0;
   for await (const chunk of process.stdin) {
     size += chunk.length;
-    if (size > 32768) throw new Error('input_limit');
+    if (size > 256 * 1024) throw new Error('input_limit');
     chunks.push(chunk);
   }
   return dispatch(JSON.parse(Buffer.concat(chunks).toString('utf8')));
@@ -108,6 +112,7 @@ if (require.main === module) main().then(result => process.stdout.write(JSON.str
   // Exception text may contain tokens, file paths or response bodies. Never return it.
   process.stdout.write(JSON.stringify({ error: 'quark_operation_failed',
     message: '操作未确认成功，请检查账号状态、参数和原操作记录；不要更换请求编号重复提交。',
+    reason: /^(invalid_upload_(pre|bucket|auth|callback|etag)|unsupported_upload_host|upload_[a-z_]+|invalid_text_file|text_size_limit)$/.test(error.message) ? error.message : undefined,
     http_status: Number.isInteger(error.httpStatus) ? error.httpStatus : undefined,
     business_code: Number.isInteger(error.businessCode) ? error.businessCode : undefined,
     outcome_unknown: error.outcomeUnknown === true }));

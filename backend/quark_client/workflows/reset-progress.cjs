@@ -41,12 +41,12 @@ async function checkScope(client, file, root, deadline) {
   }
 }
 
-async function resetFolderProgress(client,a,journal,execute=false,{sleep=ms=>new Promise(r=>setTimeout(r,ms))}={}) {
+async function resetFolderProgress(client,a,journal,execute=false,{sleep=ms=>new Promise(r=>setTimeout(r,ms)),concurrency=3,maxItems=100,budgetMs=20000}={}) {
   id(a.folderFid);id(a.folderName,'folderName');
   if(a.folderFid==='0')return {error:'explicit_folder_required',message:'必须明确指定某个文件夹，不能重置全盘。'};
   if(execute&&a.explicitReset!==true)return {error:'explicit_reset_required',message:'只有用户明确要求把指定文件夹的观看进度全部归零，才可执行。'};
   const plan={folderFid:a.folderFid,folderName:a.folderName,includeSubfolders:a.includeSubfolders!==false};
-  const deadline=Date.now()+20000;
+  const deadline=Date.now()+budgetMs;
   const folder=await client.files.getInfo(a.folderFid);
   if(folder.file_type!==0||folder.file_name!==a.folderName)return {error:'scope_mismatch',message:'实际文件夹与指定名称不一致，未执行重置。'};
   let r;
@@ -61,23 +61,23 @@ async function resetFolderProgress(client,a,journal,execute=false,{sleep=ms=>new
     persist(journal,r,true);
   }
   if(!execute)return resetSummary(r);
-  // A bounded slice keeps a large series resumable within the MCP request timeout.
-  let processed=0;
-  for(const item of r.items) {
-    if(['verified','skipped'].includes(item.state))continue;
-    if(++processed>5||Date.now()>deadline)break;
+  // Three workers share one journal and finish before releasing its exclusive lock.
+  // Python automatically continues slices; MCP clients submit the folder only once.
+  const pendingItems=r.items.filter(i=>!['verified','skipped'].includes(i.state)).slice(0,maxItems);
+  let cursor=0, stopped=false;
+  async function processItem(item) {
     const file=await client.files.getInfo(item.fid);
-    if(!isVideo(file)||file.file_name!==item.name){r.phase='scope_changed';persist(journal,r);return resetSummary(r);}
+    if(!isVideo(file)||file.file_name!==item.name){r.phase='scope_changed';stopped=true;persist(journal,r);return;}
     try{await checkScope(client,file,a.folderFid,deadline);}
-    catch(error){if(error.message==='work_budget')break;r.phase='scope_changed';persist(journal,r);return resetSummary(r);}
-    if(!plan.includeSubfolders&&String(file.pdir_fid)!==a.folderFid){r.phase='scope_changed';persist(journal,r);return resetSummary(r);}
+    catch(error){if(error.message==='work_budget')return;r.phase='scope_changed';stopped=true;persist(journal,r);return;}
+    if(!plan.includeSubfolders&&String(file.pdir_fid)!==a.folderFid){r.phase='scope_changed';stopped=true;persist(journal,r);return;}
     if(item.state==='queued') {
       const before=progressSummary(file);
       if(typeof before.durationSeconds!=='number'||before.durationSeconds<=0){
-        item.state='skipped';item.reason='invalid_duration';persist(journal,r);continue;
+        item.state='skipped';item.reason='invalid_duration';persist(journal,r);return;
       }
-      if(before.positionSeconds===0){item.state='verified';item.afterSeconds=0;persist(journal,r);continue;}
-      if(Date.now()>deadline)break;
+      if(before.positionSeconds===0){item.state='verified';item.afterSeconds=0;persist(journal,r);return;}
+      if(Date.now()>deadline||stopped)return;
       item.beforeSeconds=before.positionSeconds;item.state='submitting';r.phase='in_progress';persist(journal,r);
       // Same interface as research/examples/set-progress.cjs: one report, then readbacks.
       await client.playback.setPosition({fid:item.fid,seconds:0});
@@ -92,6 +92,15 @@ async function resetFolderProgress(client,a,journal,execute=false,{sleep=ms=>new
       persist(journal,r);
     }
   }
+  const workers=await Promise.allSettled(Array.from({length:concurrency},async()=>{
+    while(!stopped&&cursor<pendingItems.length&&Date.now()<deadline) {
+      const item=pendingItems[cursor++];
+      try {await processItem(item);} catch(error) {stopped=true;throw error;}
+    }
+  }));
+  const failure=workers.find(w=>w.status==='rejected');
+  if(failure)throw failure.reason;
+  if(r.phase==='scope_changed')return resetSummary(r);
   const pending=r.items.some(i=>!['verified','skipped'].includes(i.state));
   r.phase=pending?'in_progress':r.items.some(i=>i.state==='skipped')?'partial':'verified';
   persist(journal,r);return resetSummary(r);

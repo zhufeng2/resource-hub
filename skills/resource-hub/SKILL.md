@@ -26,7 +26,7 @@ description: 通过 Resource Hub MCP 搜索资源、查看夸克目录和转存�
 - 写工具默认 execute=false，可预览；真正执行传 execute=true。批量及目录转存优先 quark_save_entries：一次选择同一分享目录下 1–100 个文件或文件夹，并传真实 source_parent_fid。系列文件夹可整目录交给夸克转存，不逐集调用；保留 quark_save_file 处理单文件。
 - 每个操作生成唯一 request_id，保留原参数。同一操作始终复用原 ID；超时先 quark_operation_status，再用原参数和原 ID 续查，不换编号重提。
 - 只有 phase=verified 才报告完成。operation_busy 或提交结果不明时，保留记录交管理员核对，不删除记录或锁来重试。不覆盖或删除已有文件；用户要求整理或调整位置、名称时，使用 quark_move 移动文件/文件夹、quark_rename 改名，保留原 request_id，核验后报告。
-- 当前 MCP 没有上传和删除工具。需要系列观看指南时交付本地文件并注明未上传，不启用其他工具补做。
+- 用户要求将观看指南或目录说明写入网盘时，用 quark_create_text_file 创建非空 UTF-8 .txt/.md（最多32KiB）；明确真实父目录 fid，不覆盖同名条目。默认预览，写入 execute=true；同一内容复用原 request_id，只有 phase=verified、content_verified=true 才确认完成。此工具不接受本地路径，不用于任意二进制上传。当前没有删除工具。
 
 最终交付实际保存位置、成功文件与尚未完成项；连接成功、读到元数据、任务结束和目标核验完成分别说明。
 
@@ -37,4 +37,4 @@ description: 通过 Resource Hub MCP 搜索资源、查看夸克目录和转存�
 
 只有用户明确说“把某文件夹/某系列文件夹的视频观看进度全部归零”等指令时，才使用 quark_reset_folder_progress。必须解析并核对真实 folder_fid、folder_name，不得默认全盘或从普通搜索、转存、整理推断重置意图。位置不明确或存在同名目录时先定位，无法唯一确定则询问用户。
 
-默认预览，列出指定范围与视频数量。用户已经明确指定范围并要求归零时，可传 explicitly_requested=true、execute=true，无需再次确认。默认包含该目录的子文件夹；用户只要求直接子项时 include_subfolders=false。每次最多处理5个视频，始终以原参数和 request_id 接续，直到 phase=verified。partial、scope_changed 或未确认条目必须如实说明，不能说全部完成；提交结果未知时只回读，禁止换 ID 重提。
+默认预览，列出指定范围与视频数量。用户已经明确指定范围并要求归零时，可传 explicitly_requested=true、execute=true，无需再次确认。默认包含该目录的子文件夹；用户只要求直接子项时 include_subfolders=false。一次提交后服务器后台自动接续，最多3个视频并发。background_running=true 时仅用 quark_operation_status 查看进度，间隔至少10秒，不逐批重复调用归零工具；后台暂停或服务重启后，用原参数和 request_id 接续。partial、scope_changed 或未确认条目必须如实说明，不能说全部完成；提交结果未知时只回读，禁止换 ID 重提。

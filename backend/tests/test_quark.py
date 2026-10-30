@@ -101,6 +101,30 @@ class QuarkTests(unittest.TestCase):
         save = next(t for t in tools if t['name'] == 'quark_save_file')
         self.assertFalse(save['inputSchema']['properties']['execute']['default'])
 
+    def test_large_text_json_escaping_and_other_request_limits(self):
+        self.bind()
+        tokens, _, _ = self.login()
+        headers = {'Authorization': 'Bearer ' + tokens['access_token'],
+                   'Accept': 'application/json, text/event-stream', 'Content-Type': 'application/json',
+                   'MCP-Protocol-Version': '2025-03-26'}
+        content = '\u89c2' * 10000  # 30KB UTF-8, 60KB when JSON escapes Chinese.
+        args = {'parent_fid': 'folder', 'name': 'Guide.md', 'content': content, 'request_id': 'large-guide'}
+        payload = {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
+                   'params': {'name': 'quark_create_text_file', 'arguments': args}}
+        raw = json.dumps(payload, ensure_ascii=True).encode()
+        self.assertGreater(len(raw), 16384)
+        with patch.object(self.app.state.quark, 'run', new=AsyncMock(return_value={'phase': 'preview'})) as run:
+            response = self.client.post('/mcp', content=raw, headers=headers)
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(response.json()['result'].get('isError'))
+            self.assertEqual(run.call_args.args[2]['content'], content)
+            args['content'] = '\u89c2' * 11000
+            self.assertEqual(self.tool(tokens['access_token'], 'quark_create_text_file', args)['error'], 'text_size_limit')
+            self.assertEqual(run.await_count, 1)
+        payload['params']['name'] = 'quark_list_files'
+        self.assertEqual(self.client.post('/mcp', content=json.dumps(payload).encode(), headers=headers).status_code, 413)
+        self.assertEqual(self.client.post('/mcp', content=b'x' * (256 * 1024 + 1), headers=headers).status_code, 413)
+
     def test_missing_key_fails_closed_and_cookie_validation(self):
         self.bind()
         uid = self.store.login('alice', PASSWORD)['id']
@@ -174,6 +198,8 @@ class QuarkTests(unittest.TestCase):
         uid = self.store.login('alice', PASSWORD)['id']
         account = self.store.quark_account(uid)
         cases = [
+            ('quark_create_text_file', {'parent_fid': 'folder', 'name': 'Guide.md', 'content': '# Guide',
+              'request_id': 'text1'}, 'create_text'),
             ('quark_reset_folder_progress', {'folder_fid': 'folder', 'folder_name': 'Series',
               'request_id': 'reset1'}, 'reset_progress'),
             ('quark_rename', {'fid': 'folder', 'name': 'Series', 'request_id': 'rename1'}, 'rename'),
@@ -189,3 +215,56 @@ class QuarkTests(unittest.TestCase):
                 return {'phase': 'preview'}
             with patch.object(self.app.state.quark, 'run', side_effect=fake):
                 self.assertEqual(self.tool(tokens['access_token'], tool, args)['phase'], 'preview')
+
+    def test_reset_continues_without_repeated_mcp_calls_and_status_does_not_submit(self):
+        self.bind()
+        uid = self.store.login('alice', PASSWORD)['id']
+        q = self.app.state.quark
+        args = {'folderFid': 'folder', 'folderName': 'Series', 'explicitReset': True}
+        real_sleep = asyncio.sleep
+        async def quick_sleep(seconds):
+            await real_sleep(0)
+        async def verify():
+            calls = 0
+            async def run(cookie, action, params=None, journal=None, execute=False):
+                nonlocal calls
+                self.assertEqual(action, 'reset_progress')
+                calls += 1
+                return {'phase': 'verified' if calls == 3 else 'in_progress', 'verified': calls * 40, 'skipped': 0}
+            with patch.object(q, 'run', side_effect=run), patch('backend.quark.asyncio.sleep', side_effect=quick_sleep):
+                first = await q.call(uid, 'reset_progress', args, 'auto-reset', True)
+                self.assertTrue(first['background_running'])
+                repeat = await q.call(uid, 'reset_progress', args, 'auto-reset', True)
+                self.assertTrue(repeat['background_running'])
+                conflict = await q.call(uid, 'reset_progress', {**args, 'folderName': 'Other'}, 'auto-reset', True)
+                self.assertEqual(conflict['error'], 'plan_conflict')
+                self.assertEqual(calls, 1)
+                await next(iter(q.reset_jobs.values()))['task']
+                result = await q.call(uid, 'operation', request_id='auto-reset')
+                self.assertEqual(result['phase'], 'verified')
+                self.assertFalse(result['background_running'])
+                self.assertEqual(calls, 3)
+        asyncio.run(verify())
+
+    def test_reset_stops_on_rebinding_or_repeated_stagnation(self):
+        self.bind()
+        uid = self.store.login('alice', PASSWORD)['id']
+        q = self.app.state.quark
+        real_sleep = asyncio.sleep
+        async def quick_sleep(seconds):
+            await real_sleep(0)
+        async def verify():
+            args = {'folderFid': 'folder', 'folderName': 'Series', 'explicitReset': True}
+            with patch.object(q, 'run', new=AsyncMock(return_value={'phase': 'in_progress', 'verified': 0, 'skipped': 0})) as run, \
+                    patch('backend.quark.asyncio.sleep', side_effect=quick_sleep):
+                await q.call(uid, 'reset_progress', args, 'stagnant', True)
+                await next(iter(q.reset_jobs.values()))['task']
+                self.assertEqual(run.await_count, 4)
+                await q.call(uid, 'reset_progress', args, 'rebind-reset', True)
+                job = next(j for j in q.reset_jobs.values() if j['running'])
+                before = run.await_count
+                self.store.bind_quark(uid, 'session=rebound')
+                await job['task']
+                self.assertEqual(run.await_count, before)
+                self.assertFalse(job['running'])
+        asyncio.run(verify())

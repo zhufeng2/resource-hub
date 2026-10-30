@@ -1,4 +1,5 @@
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
@@ -40,6 +41,8 @@ class Guard:
         # Limit bodies before form parsing or JSON decoding, including chunked uploads.
         if scope['method'] in ('POST', 'PUT', 'PATCH', 'DELETE'):
             body = bytearray()
+            is_mcp = path.rstrip('/') == '/mcp'
+            transport_limit = 256 * 1024 if is_mcp else 16 * 1024
             deadline = asyncio.get_running_loop().time() + 15
             while True:
                 try:
@@ -49,10 +52,23 @@ class Guard:
                 if message['type'] == 'http.disconnect':
                     return
                 body.extend(message.get('body', b''))
-                if len(body) > 16384:
+                if len(body) > transport_limit:
                     return await JSONResponse({'error': 'request_too_large'}, status_code=413)(scope, receive, send)
                 if not message.get('more_body', False):
                     break
+            if len(body) > 16 * 1024:
+                # Allow JSON escaping overhead only for the text creation tool.
+                # The tool separately enforces the decoded UTF-8 content limit.
+                try:
+                    envelope = json.loads(body)
+                    larger_text = (is_mcp and isinstance(envelope, dict)
+                        and envelope.get('method') == 'tools/call'
+                        and isinstance(envelope.get('params'), dict)
+                        and envelope['params'].get('name') == 'quark_create_text_file')
+                except (ValueError, UnicodeError):
+                    larger_text = False
+                if not larger_text:
+                    return await JSONResponse({'error': 'request_too_large'}, status_code=413)(scope, receive, send)
             delivered = False
 
             async def replay():
@@ -86,6 +102,7 @@ def create_app(settings=None, backend=None, upstream=None):
             try:
                 yield
             finally:
+                await quark.close()
                 cleanup_task.cancel()
                 try:
                     await cleanup_task

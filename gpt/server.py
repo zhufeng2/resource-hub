@@ -94,6 +94,19 @@ def build_server(settings, store, service, quark=None):
             {'parentFid': parent_fid, 'name': name}, request_id, execute)
 
     @mcp.tool(annotations=write, meta=auth_meta)
+    async def quark_create_text_file(parent_fid: str, name: str, content: str, request_id: str,
+                                     ctx: Context, execute: bool = False) -> dict:
+        """在指定目录创建 UTF-8 文本文件（.txt 或 .md，最多32KiB），用于观看指南、目录说明。
+        默认预览；用户要求写入网盘时 execute=true。不覆盖同名文件，不接受本地路径或上传URL。
+        同一操作保留原内容、参数和 request_id；结果不明只核验，禁止换编号重传。
+        只有 phase=verified 且 content_verified=true 才表示文件及内容摘要核验完成。
+        """
+        if len(content.encode('utf-8')) > 32768:
+            return {'error': 'text_size_limit', 'message': '文本最多32KiB，请精简内容。'}
+        return await quark.call(current_user(ctx)['id'], 'create_text',
+            {'parentFid': parent_fid, 'name': name, 'content': content}, request_id, execute)
+
+    @mcp.tool(annotations=write, meta=auth_meta)
     async def quark_save_file(share_url: str, fid: str, to_parent_fid: str, request_id: str,
                               ctx: Context, passcode: str = '', execute: bool = False) -> dict:
         """转存明确选中的一个分享文件到明确目录；不支持整目录或自动全选。默认预览。
@@ -150,8 +163,9 @@ def build_server(settings, store, service, quark=None):
         必须是用户明确要求该目录进度归零，才可 explicitly_requested=true、execute=true；
         普通搜索、转存、整理不能触发此工具。不能默认全盘，禁止 folder_fid=0。
         先定位真实目录，folder_name 必须与实际目录名一致；默认包含该目录子文件夹。
-        分批执行，每次最多5个视频，原请求编号和参数接续直到verified；不重复上报已提交条目。
-        partial 表示部分条目未处理，in_progress 表示需接续；只有 verified 才全部回读确认为0。
+        一次提交，服务器后台自动分批处理，最多3个视频并发；不重复上报已提交条目。
+        background_running=true 时只需 quark_operation_status 查询，建议10秒以上间隔。
+        服务重启或后台暂停时用原编号、原参数接续。partial 表示部分未处理；只有 verified 才全部回读确认为0。
         """
         return await quark.call(current_user(ctx)['id'], 'reset_progress', {
             'folderFid': folder_fid, 'folderName': folder_name,
