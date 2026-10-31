@@ -10,8 +10,8 @@
 | --- | --- |
 | `web/app.py` | 网页路由、会话与同源 JSON API |
 | `web/static/` | HTML、CSS、JavaScript 与 favicon |
-| `gpt/server.py` | MCP 搜索、结果、额度及夸克工具 |
-| `gpt/oauth.py` | OAuth 注册、授权、令牌交换和元数据 |
+| `backend/mcp/server.py` | MCP 搜索、结果、额度及夸克工具 |
+| `backend/mcp/oauth.py` | OAuth 注册、授权、令牌交换和元数据 |
 | `backend/` | 账号、存储、上游适配、搜索及额度逻辑 |
 | `skills/resource-hub/` | 仅 MCP 流程说明，无本地运行脚本 |
 | `install.py` | 本地 Skill 安装和更新 |
@@ -78,7 +78,7 @@ uvicorn backend.app:create_app --factory --host 127.0.0.1 --port 8000 --no-acces
 ```bash
 python -m unittest discover -s backend/tests -t . -v
 python3 skills/resource-hub/tests/test_workflow.py
-python3 -m compileall -q install.py backend gpt web skills/resource-hub/scripts
+python3 -m compileall -q install.py backend web skills/resource-hub/scripts
 bash -n update.sh
 bash -n skills/quarkclouddrive/scripts/install.sh
 bash -n skills/quarkclouddrive/scripts/uninstall.sh

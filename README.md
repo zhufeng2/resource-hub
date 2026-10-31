@@ -2,7 +2,7 @@
 
 搜索公开的网盘分享，整理搜索结果，并通过 MCP 将选中的资源保存到各自绑定的夸克网盘。
 
-**[访问测试网站](https://pan.sysscitech.com/)** · [网页使用](web/README.md) · [MCP 接入](gpt/README.md) · [自行部署](backend/README.md)
+**[访问测试网站](https://pan.sysscitech.com/)** · [网页使用](web/README.md) · [MCP 接入](mcp/README.md) · [自行部署](backend/README.md)
 
 ## 选择使用方式
 
@@ -35,7 +35,7 @@
 | 文档 | 内容 |
 | --- | --- |
 | [网页使用指南](web/README.md) | 登录、搜索设置、结果、个人主页、常见问题 |
-| [MCP 接入指南](gpt/README.md) | OAuth、Bearer Token、工具参数和额度规则 |
+| [MCP 接入指南](mcp/README.md) | OAuth、Bearer Token、工具参数和额度规则 |
 | [Skill 使用流程](skills/resource-hub/SKILL.md) | MCP 资源筛选、转存与文件整理流程 |
 | [服务器部署与维护](backend/README.md) | Docker 部署、账号管理、更新、备份和故障排查 |
 | [连接已有 PanSou](backend/EXISTING_PANSOU.md) | Docker 网络、上游认证及旧站入口迁移 |

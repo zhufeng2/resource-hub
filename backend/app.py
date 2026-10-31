@@ -9,8 +9,8 @@ from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 
 from .config import Settings
-from gpt.oauth import OAuth
-from gpt.server import bearer, build_server
+from backend.mcp.oauth import OAuth
+from backend.mcp.server import bearer, build_server
 from .store import Store
 from .service import SearchService
 from .upstream import Upstream

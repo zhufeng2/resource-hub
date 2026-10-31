@@ -2,7 +2,7 @@
 
 直接使用 [Resource Hub 测试网站](https://pan.sysscitech.com/)，或访问管理员提供的站点地址。账号由站点管理员创建，目前没有自助注册和密码找回入口。
 
-[返回项目首页](../README.md) · [MCP 接入](../gpt/README.md) · [自行部署](../backend/README.md)
+[返回项目首页](../README.md) · [MCP 接入](../mcp/README.md) · [自行部署](../backend/README.md)
 
 ## 登录与搜索
 
@@ -83,7 +83,7 @@
 
 ## 其他入口
 
-网页提供搜索和结果管理。需要在助手里搜索，请阅读 [MCP 接入指南](../gpt/README.md)；需要夸克转存，可通过 MCP 直接操作，或使用[本地 Skill](../skills/resource-hub/SKILL.md)编排流程。
+网页提供搜索和结果管理。需要在助手里搜索，请阅读 [MCP 接入指南](../mcp/README.md)；需要夸克转存，可通过 MCP 直接操作，或使用[本地 Skill](../skills/resource-hub/SKILL.md)编排流程。
 
 ## 绑定自己的夸克网盘
 

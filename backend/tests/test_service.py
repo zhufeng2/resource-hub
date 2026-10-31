@@ -19,7 +19,7 @@ from backend.errors import SearchFailure
 from backend.config import Settings
 from backend.service import SearchService
 from backend.store import Store, day_key, pkce
-from gpt.oauth import authorization_cookie
+from backend.mcp.oauth import authorization_cookie
 
 logging.getLogger('httpx').setLevel(logging.WARNING)
 

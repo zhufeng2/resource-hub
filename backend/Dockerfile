@@ -10,9 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends nodejs \
     && mkdir /data && chown service:service /data
 COPY backend /app/backend
 COPY web /app/web
-COPY gpt /app/gpt
 # Host checkouts may use a restrictive umask; the runtime user must read code.
-RUN chmod -R a+rX /app/backend /app/web /app/gpt
+RUN chmod -R a+rX /app/backend /app/web
 USER service
 EXPOSE 8000
 CMD ["uvicorn", "backend.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--no-access-log", "--no-server-header", "--limit-concurrency", "100", "--proxy-headers", "--forwarded-allow-ips", "*"]

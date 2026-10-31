@@ -4,8 +4,6 @@
 !backend/**
 !web/
 !web/**
-!gpt/
-!gpt/**
 .git
 .env
 .env.*
