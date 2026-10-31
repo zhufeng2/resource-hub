@@ -189,6 +189,22 @@ class Store:
         with self.connection() as db:
             return [dict(r) for r in db.execute('SELECT id,username,enabled,daily_limit,is_admin FROM users ORDER BY id')]
 
+    def user_page(self, query='', page=1, page_size=20):
+        with self.connection() as db:
+            where = 'WHERE instr(lower(username), lower(?)) > 0'
+            total = db.execute('SELECT count(*) FROM users ' + where, (query,)).fetchone()[0]
+            pages = max(1, (total + page_size - 1) // page_size)
+            page = min(page, pages)
+            items = [dict(row) for row in db.execute(
+                'SELECT id,username,enabled,daily_limit,is_admin FROM users ' + where +
+                ' ORDER BY id LIMIT ? OFFSET ?', (query, page_size, (page - 1) * page_size))]
+        return {'items': items, 'total': total, 'page': page, 'page_size': page_size, 'pages': pages}
+
+    def managed_user(self, username):
+        with self.connection() as db:
+            row = db.execute('SELECT id,username FROM users WHERE username=?', (username,)).fetchone()
+            return dict(row) if row else None
+
     def web_session(self, user_id):
         token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
         with self.connection(True) as db:

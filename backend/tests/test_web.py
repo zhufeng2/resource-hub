@@ -118,6 +118,36 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/connections/revoke', json={}, headers=headers).status_code, 200)
         self.assertIsNone(self.store.authenticate(tokens['access_token'], self.settings.resource))
 
+    def test_admin_user_search_and_pagination(self):
+        self.web_login('alice')
+        self.assertEqual(self.client.get('/api/users?q=admin&page=1').status_code, 403)
+        headers = self.web_login('admin')
+        with self.store.connection(True) as db:
+            password = db.execute("SELECT password FROM users WHERE username='bob'").fetchone()[0]
+            db.executemany('INSERT INTO users(username,password,daily_limit) VALUES(?,?,?)',
+                           [(f'member{i:02}', password, 5) for i in range(25)])
+        first = self.client.get('/api/users').json()
+        self.assertEqual((first['total'], first['page'], first['pages'], len(first['items'])), (28, 1, 2, 20))
+        second = self.client.get('/api/users?page=2').json()
+        self.assertEqual(len(second['items']), 8)
+        self.assertFalse({u['id'] for u in first['items']} & {u['id'] for u in second['items']})
+        self.assertEqual(set(first['items'][0]), {'id', 'username', 'enabled', 'daily_limit', 'is_admin'})
+        result = self.client.get('/api/users?q=MEMBER&page_size=10&page=2').json()
+        self.assertEqual((result['total'], result['pages'], result['page']), (25, 3, 2))
+        self.assertEqual([u['username'] for u in result['items']], [f'member{i:02}' for i in range(10, 20)])
+        last = self.client.get('/api/users?q=member&page_size=10&page=999').json()
+        self.assertEqual((last['page'], len(last['items'])), (3, 5))
+        for query in ['missing', '%', '_', "' OR 1=1 --"]:
+            empty = self.client.get('/api/users', params={'q': query}).json()
+            self.assertEqual((empty['total'], empty['page'], empty['pages'], empty['items']), (0, 1, 1, []))
+        for params in [{'page': 'abc'}, {'page': 0}, {'page': 1000001}, {'page_size': 0},
+                       {'page_size': 101}, {'page_size': '1.5'}, {'q': 'x' * 65}]:
+            self.assertEqual(self.client.get('/api/users', params=params).status_code, 400)
+        # Editing a user on a later page must not scan only the default first page.
+        edited = self.client.patch('/api/users', json={'username': 'member24', 'daily_limit': 9}, headers=headers)
+        self.assertEqual(edited.status_code, 200)
+        self.assertEqual(self.client.get('/api/users?q=member24').json()['items'][0]['daily_limit'], 9)
+
     def test_delete_history_requires_owner_and_csrf_and_erases_content(self):
         self.assertEqual(self.client.delete('/api/history').status_code, 401)
         self.assertEqual(self.client.delete('/api/history/missing').status_code, 401)

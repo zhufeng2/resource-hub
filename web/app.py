@@ -213,7 +213,15 @@ class Web:
         if admin['username'] != 'admin':
             raise WebError('仅 admin 账号可以管理用户。', 403)
         if request.method == 'GET':
-            return reply({'items': self.store.users()})
+            query = request.query_params.get('q', '').strip()
+            try:
+                page = int(request.query_params.get('page', '1'))
+                page_size = int(request.query_params.get('page_size', '20'))
+            except ValueError:
+                raise WebError('分页参数不正确。')
+            if len(query) > 64 or not 1 <= page <= 1000000 or not 1 <= page_size <= 100:
+                raise WebError('搜索或分页参数不正确。')
+            return reply(self.store.user_page(query, page, page_size))
         data = await self.body(request)
         username = data.get('username', '')
         if not isinstance(username, str):
@@ -229,7 +237,7 @@ class Web:
                 raise WebError('密码格式不正确。')
             self.store.add_user(username, password, limit, bool(data.get('is_admin', False)))
         else:
-            target = next((u for u in self.store.users() if u['username'] == username), None)
+            target = self.store.managed_user(username)
             if not target:
                 raise WebError('账号不存在。', 404)
             if target['id'] == admin['id'] and (data.get('enabled') is False or data.get('is_admin') is False):
