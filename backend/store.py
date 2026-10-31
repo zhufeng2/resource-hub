@@ -78,9 +78,6 @@ class Store:
                     hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, csrf TEXT NOT NULL, expires REAL NOT NULL);
                 CREATE TABLE IF NOT EXISTS preferences (
                     user_id INTEGER PRIMARY KEY, value TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS bindings (
-                    id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, provider TEXT NOT NULL,
-                    label TEXT NOT NULL, upstream_hash TEXT NOT NULL, created REAL NOT NULL);
                 CREATE TABLE IF NOT EXISTS quark_accounts (
                     user_id INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, ciphertext BLOB NOT NULL,
                     allow_writes INTEGER NOT NULL DEFAULT 0, updated REAL NOT NULL);
@@ -88,6 +85,12 @@ class Store:
             columns = {r['name'] for r in db.execute('PRAGMA table_info(users)')}
             if 'is_admin' not in columns:
                 db.execute('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0')
+            if 'email' not in columns:
+                db.execute('ALTER TABLE users ADD COLUMN email TEXT')
+            db.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email) WHERE email IS NOT NULL')
+            db.execute('''CREATE TABLE IF NOT EXISTS email_codes (
+                key TEXT PRIMARY KEY, code_hash TEXT NOT NULL, expires REAL NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0)''')
 
     @contextmanager
     def connection(self, write=False):
@@ -162,6 +165,46 @@ class Store:
             db.execute('INSERT INTO users(username,password,daily_limit,is_admin) VALUES(?,?,?,?)',
                        (username, encoded, limit, int(is_admin)))
 
+    def save_email_code(self, key, code_hash):
+        with self.connection(True) as db:
+            db.execute('INSERT OR REPLACE INTO email_codes VALUES(?,?,?,0)',
+                       (key, code_hash, time.time() + 600))
+
+    def remove_email_code(self, key, code_hash):
+        with self.connection(True) as db:
+            db.execute('DELETE FROM email_codes WHERE key=? AND code_hash=?', (key, code_hash))
+
+    def email_available(self, email):
+        with self.connection() as db:
+            return not db.execute('SELECT 1 FROM users WHERE email=?', (email,)).fetchone()
+
+    def verify_email_account(self, key, code_hash, email, *, username=None, password=None, limit=5, user_id=None):
+        # Invalid attempts must commit; consume the valid code and create/bind in one transaction.
+        with self.connection(True) as db:
+            row = db.execute('SELECT * FROM email_codes WHERE key=?', (key,)).fetchone()
+            if not row or row['expires'] <= time.time() or row['attempts'] >= 5:
+                return False
+            if not hmac.compare_digest(row['code_hash'], code_hash):
+                db.execute('UPDATE email_codes SET attempts=attempts+1 WHERE key=?', (key,))
+                return False
+        # Hash only after a valid proof, outside the write lock; then recheck atomically.
+        encoded = password_hash(password) if user_id is None else None
+        with self.connection(True) as db:
+            row = db.execute('SELECT * FROM email_codes WHERE key=?', (key,)).fetchone()
+            if (not row or row['expires'] <= time.time() or row['attempts'] >= 5
+                    or not hmac.compare_digest(row['code_hash'], code_hash)):
+                return False
+            if user_id is None:
+                db.execute('INSERT INTO users(username,password,daily_limit,is_admin,email) VALUES(?,?,?,0,?)',
+                           (username, encoded, limit, email))
+            else:
+                changed = db.execute('UPDATE users SET email=? WHERE id=? AND enabled=1 AND email IS NULL',
+                                     (email, user_id)).rowcount
+                if not changed:
+                    return False
+            db.execute('DELETE FROM email_codes WHERE key=?', (key,))
+        return True
+
     def change_user(self, username, *, enabled=None, password=None, limit=None, is_admin=None):
         with self.connection(True) as db:
             row = db.execute('SELECT id FROM users WHERE username=?', (username,)).fetchone()
@@ -191,13 +234,15 @@ class Store:
 
     def user_page(self, query='', page=1, page_size=20):
         with self.connection() as db:
-            where = 'WHERE instr(lower(username), lower(?)) > 0'
-            total = db.execute('SELECT count(*) FROM users ' + where, (query,)).fetchone()[0]
+            total = db.execute("""SELECT count(*) FROM users
+                WHERE instr(lower(username), lower(?)) > 0 OR instr(coalesce(email, ''), lower(?)) > 0""",
+                (query, query)).fetchone()[0]
             pages = max(1, (total + page_size - 1) // page_size)
             page = min(page, pages)
             items = [dict(row) for row in db.execute(
-                'SELECT id,username,enabled,daily_limit,is_admin FROM users ' + where +
-                ' ORDER BY id LIMIT ? OFFSET ?', (query, page_size, (page - 1) * page_size))]
+                """SELECT id,username,enabled,daily_limit,is_admin,email FROM users
+                WHERE instr(lower(username), lower(?)) > 0 OR instr(coalesce(email, ''), lower(?)) > 0
+                ORDER BY id LIMIT ? OFFSET ?""", (query, query, page_size, (page - 1) * page_size))]
         return {'items': items, 'total': total, 'page': page, 'page_size': page_size, 'pages': pages}
 
     def managed_user(self, username):
@@ -231,7 +276,7 @@ class Store:
         with self.connection(value is not None) as db:
             if value is not None:
                 # Mark the preference so a later explicit opt-out is respected.
-                value = {**value, 'verification_defaults_v2': True}
+                value = {**value, 'verification_defaults_v2': True, 'cloud_types': ['quark']}
                 db.execute('INSERT OR REPLACE INTO preferences VALUES(?,?)', (user_id, json.dumps(value)))
             row = db.execute('SELECT value FROM preferences WHERE user_id=?', (user_id,)).fetchone()
             saved = json.loads(row['value']) if row else None
@@ -245,7 +290,7 @@ class Store:
         if migrate is not None:
             with self.connection(True) as db:
                 db.execute('UPDATE preferences SET value=? WHERE user_id=?', (json.dumps(migrate), user_id))
-        return {**defaults, **(saved or {})}
+        return {**defaults, **(saved or {}), 'cloud_types': ['quark']}
 
     @staticmethod
     def history_query(value):
@@ -293,29 +338,6 @@ class Store:
             db.executemany("UPDATE searches SET query='',result=NULL WHERE user_id=? AND id=?",
                            ((user_id, search_id) for search_id in ids))
         return ids
-
-    def bindings(self, user_id):
-        with self.connection() as db:
-            return [dict(r) for r in db.execute('SELECT * FROM bindings WHERE user_id=? ORDER BY created', (user_id,))]
-
-    def binding(self, user_id, binding_id):
-        with self.connection() as db:
-            row = db.execute('SELECT * FROM bindings WHERE user_id=? AND id=?', (user_id, binding_id)).fetchone()
-            return dict(row) if row else None
-
-    def add_binding(self, user_id, provider, label, upstream_hash):
-        binding_id = secrets.token_urlsafe(18)
-        with self.connection(True) as db:
-            count = db.execute('SELECT COUNT(*) FROM bindings WHERE user_id=?', (user_id,)).fetchone()[0]
-            if count >= 15:
-                raise ValueError('最多添加 15 个搜索源账号')
-            db.execute('INSERT INTO bindings VALUES(?,?,?,?,?,?)',
-                       (binding_id, user_id, provider, label, upstream_hash, time.time()))
-        return self.binding(user_id, binding_id)
-
-    def remove_binding(self, user_id, binding_id):
-        with self.connection(True) as db:
-            db.execute('DELETE FROM bindings WHERE user_id=? AND id=?', (user_id, binding_id))
 
     def login(self, username, password):
         with self.connection() as db:
@@ -548,7 +570,8 @@ class Store:
             for statement in ('DELETE FROM tickets WHERE expires<?',
                               'DELETE FROM codes WHERE expires<?',
                               'DELETE FROM tokens WHERE expires<?',
-                              'DELETE FROM web_sessions WHERE expires<?'):
+                              'DELETE FROM web_sessions WHERE expires<?',
+                              'DELETE FROM email_codes WHERE expires<?'):
                 db.execute(statement, (now,))
             db.execute('DELETE FROM limits WHERE started<?', (now - 86400,))
             db.execute('DELETE FROM searches WHERE created<?', (now - 31 * 86400,))

@@ -164,8 +164,8 @@ mark,#account-remaining,.account-details dd strong { color:var(--accent); }
 .profile-section { margin-top:24px;padding:32px; }
 .profile-section h2,.section-heading h2,.continuous-section h2 { font-size:20px; }
 .history-row strong { font-size:15px; }
-.binding-card { background:transparent;box-shadow:none;border-radius:0; }
-.binding-card h3 { font-size:15px; }
+
+
 .continuous-section { grid-template-columns:180px minmax(0,1fr);gap:24px; }
 .continuous-section:last-child { border-bottom:0;margin-bottom:0;padding-bottom:0; }
 .copy-field code { font-size:13px; }

@@ -37,9 +37,28 @@ chmod 600 backend/.env
 | `SEARCH_TIMEOUT` | 上游搜索超时，默认 25 秒 |
 | `SEARCH_CONCURRENCY` | 同时进行的搜索数量，默认 4 |
 | `PANSOU_ALLOW_HTTP` | 仅访问受信任的内部 HTTP 上游时设为 `true` |
-| `SOURCE_SITE_HOSTS` | 管理员可配置的搜索源镜像主机名，多个以逗号分隔 |
 
 浏览器不需要上游凭据，不要将这些值写入前端代码。站点外部访问地址应与 `PUBLIC_BASE_URL` 一致，OAuth 回调地址需与客户端提供的值精确匹配。
+
+### 邮箱验证注册
+
+配置 `backend/.env` 后，登录窗口会显示“注册账号”。必须验证邮箱后才创建普通账号；同一邮箱只能绑定一个账号。已有账号在“安全与连接”中绑定邮箱。未配置邮件服务时注册入口关闭，原有账号仍可登录。
+
+```dotenv
+REGISTRATION_ENABLED=true
+SMTP_HOST=smtp.qq.com
+SMTP_PORT=465
+SMTP_SECURITY=ssl
+SMTP_USERNAME=你的QQ邮箱@qq.com
+SMTP_PASSWORD=QQ邮箱SMTP授权码
+SMTP_FROM=你的QQ邮箱@qq.com
+```
+
+上面以 QQ 邮箱发信为例，注册邮箱不限服务商，支持 QQ、163、Gmail、Outlook 等可接收验证码的邮箱。QQ 邮箱应在设置中开启 SMTP 并生成授权码，不能填写 QQ 登录密码，参见 [QQ 邮箱官方授权码说明](https://help.mail.qq.com/detail/106/985)。其他邮件服务可修改 SMTP 参数。
+
+邮件服务使用 587 端口时通常配置 `SMTP_SECURITY=starttls`；始终校验证书，不支持明文连接。授权码仅放在服务器 `.env` 中。填写后重新创建应用容器使配置生效；若代码版本未变，使用 `bash update.sh --force`。设置 `REGISTRATION_ENABLED=false` 可关闭新用户注册，已有账号仍可绑定邮箱。
+
+验证码 10 分钟有效，最多尝试 5 次，绑定浏览器会话和用途，成功后立即失效。同一邮箱每分钟最多发送 1 次、每天 5 次；同一 IP 每 10 分钟最多 3 次、每天 10 次；全站每小时最多 100 次。邮箱验证只能降低批量注册滥用，不能阻止使用多个邮箱注册。
 
 ## 2. 启动服务
 

@@ -15,27 +15,12 @@ from backend.store import Store, digest
 
 
 class FakeUpstream:
-    def __init__(self):
-        self.actions = []
-
     async def catalog(self):
         return {'plugins': ['qqpd', 'gying', 'panlian', 'weibo', 'woniu'], 'channels': ['example']}
-
-    async def create_binding(self, provider):
-        return 'a' * 64
-
-    async def binding_action(self, binding, action, data):
-        self.actions.append((binding['id'], action))
-        return {'success': True, 'data': {'logged_in': action != 'logout'}, 'message': ''}
 
     async def check_links(self, items):
         return [{'state': 'ok', 'summary': ''} for _ in items]
 
-    normalize = staticmethod(Upstream.normalize)
-
-    async def request(self, path, payload, **kwargs):
-        return {'success': True, 'data': {'results': [{'title': 'source example', 'links': [
-            {'type': 'quark', 'url': 'https://pan.quark.cn/s/source'}]}]}}
 
 
 class WebTests(unittest.TestCase):
@@ -113,7 +98,7 @@ class WebTests(unittest.TestCase):
         config = {'cloud_types': ['baidu'], 'auto_check': True, 'theme': 'dark'}
         saved = self.client.put('/api/preferences', json=config, headers=headers)
         self.assertEqual(saved.status_code, 200, saved.text)
-        self.assertEqual(self.store.preferences(self.store.login('admin', PASSWORD)['id'])['cloud_types'], ['baidu'])
+        self.assertEqual(self.store.preferences(self.store.login('admin', PASSWORD)['id'])['cloud_types'], ['quark'])
         tokens, _, _ = self.login('admin')
         self.assertEqual(self.client.post('/api/connections/revoke', json={}, headers=headers).status_code, 200)
         self.assertIsNone(self.store.authenticate(tokens['access_token'], self.settings.resource))
@@ -131,7 +116,7 @@ class WebTests(unittest.TestCase):
         second = self.client.get('/api/users?page=2').json()
         self.assertEqual(len(second['items']), 8)
         self.assertFalse({u['id'] for u in first['items']} & {u['id'] for u in second['items']})
-        self.assertEqual(set(first['items'][0]), {'id', 'username', 'enabled', 'daily_limit', 'is_admin'})
+        self.assertEqual(set(first['items'][0]), {'id', 'username', 'enabled', 'daily_limit', 'is_admin', 'email'})
         result = self.client.get('/api/users?q=MEMBER&page_size=10&page=2').json()
         self.assertEqual((result['total'], result['pages'], result['page']), (25, 3, 2))
         self.assertEqual([u['username'] for u in result['items']], [f'member{i:02}' for i in range(10, 20)])
@@ -141,7 +126,7 @@ class WebTests(unittest.TestCase):
             empty = self.client.get('/api/users', params={'q': query}).json()
             self.assertEqual((empty['total'], empty['page'], empty['pages'], empty['items']), (0, 1, 1, []))
         for params in [{'page': 'abc'}, {'page': 0}, {'page': 1000001}, {'page_size': 0},
-                       {'page_size': 101}, {'page_size': '1.5'}, {'q': 'x' * 65}]:
+                       {'page_size': 101}, {'page_size': '1.5'}, {'q': 'x' * 255}]:
             self.assertEqual(self.client.get('/api/users', params=params).status_code, 400)
         # Editing a user on a later page must not scan only the default first page.
         edited = self.client.patch('/api/users', json={'username': 'member24', 'daily_limit': 9}, headers=headers)
@@ -231,20 +216,43 @@ class WebTests(unittest.TestCase):
         self.assertEqual(blocked.status_code, 429, blocked.text)
         self.assertEqual(blocked.json()['error'], 'daily_limit_reached')
 
-    def test_binding_ownership_and_test_search_quota(self):
+    def test_source_account_endpoints_removed_and_quark_scope_enforced(self):
         headers = self.web_login()
-        response = self.client.post('/api/bindings', json={'provider': 'gying', 'label': 'my account'}, headers=headers)
-        self.assertEqual(response.status_code, 200, response.text)
-        item = response.json()['items'][0]
-        self.assertNotIn('upstream_hash', item)
-        result = self.client.post('/api/bindings/' + item['id'], json={'action': 'test_search', 'keyword': 'test'}, headers=headers)
+        for path in ('/api/bindings', '/api/bindings/old-binding'):
+            self.assertEqual(self.client.post(path, json={}, headers=headers).status_code, 404)
+        options_seen = []
+
+        class Provider:
+            async def search(self, query, timeout, options):
+                options_seen.append(options)
+                return {'results': [
+                    {'url': 'https://pan.quark.cn/s/good', 'cloud_type': 'quark'},
+                    {'url': 'https://pan.baidu.com/s/other', 'cloud_type': 'baidu'},
+                    {'url': 'https://evil.example/s/spoofed', 'cloud_type': 'quark'},
+                    {'url': 'magnet:test', 'cloud_type': 'magnet'}]}
+
+        self.app.state.service.provider = Provider()
+        result = self.client.post('/api/search', json={'query': 'test', 'options': {'cloud_types': ['baidu']}}, headers=headers)
         self.assertEqual(result.status_code, 200, result.text)
-        self.assertEqual(result.json()['quota']['used'], 1)
-        self.assertEqual(self.client.post('/api/bindings/' + item['id'], json={
-            'action': 'update_config', 'base_url': 'https://127.0.0.1/'}, headers=headers).status_code, 403)
-        headers = self.web_login('bob')
-        denied = self.client.post('/api/bindings/' + item['id'], json={'action': 'get_status'}, headers=headers)
-        self.assertEqual(denied.status_code, 404)
+        self.assertEqual(options_seen[0]['cloud_types'], ['quark'])
+        data = result.json()
+        self.assertEqual([row['url'] for row in data['results']], ['https://pan.quark.cn/s/good'])
+        saved = self.client.get('/api/results/' + data['search_id']).json()
+        self.assertEqual(saved['available_count'], 1)
+        self.assertEqual(saved['options']['cloud_types'], ['quark'])
+        # Existing saved results and settings must not restore removed cloud types.
+        with self.store.connection(True) as db:
+            db.execute('UPDATE searches SET result=? WHERE id=?', (json.dumps({
+                'results': [{'url': 'https://pan.quark.cn/s/good', 'cloud_type': 'quark'},
+                            {'url': 'https://pan.baidu.com/s/old', 'cloud_type': 'baidu'}],
+                'options': {'cloud_types': ['baidu']}, 'source_binding': 'old-binding'}), data['search_id']))
+            db.execute('INSERT OR REPLACE INTO preferences VALUES(?,?)',
+                       (self.store.login('alice', PASSWORD)['id'], json.dumps({'cloud_types': ['baidu']})))
+        old = self.client.get('/api/results/' + data['search_id']).json()
+        self.assertEqual(old['available_count'], 1)
+        self.assertNotIn('source_binding', old)
+        self.assertEqual(old['options']['cloud_types'], ['quark'])
+        self.assertEqual(self.client.get('/api/session').json()['preferences']['cloud_types'], ['quark'])
 
     def test_password_change_revokes_web_and_mcp_sessions(self):
         headers = self.web_login()
@@ -343,7 +351,8 @@ class WebTests(unittest.TestCase):
     def test_static_page_and_check_reject_arbitrary_urls(self):
         response = self.client.get('/')
         self.assertEqual(response.status_code, 200)
-        self.assertIn('搜索源账号', response.text)
+        self.assertNotIn('搜索源账号', response.text)
+        self.assertNotIn('settings-clouds', response.text)
         self.assertNotIn('不会登录', response.text)
         headers = self.web_login()
         result = self.client.post('/api/search', json={'query': 'test'}, headers=headers).json()
@@ -352,6 +361,16 @@ class WebTests(unittest.TestCase):
 
 
 class UpstreamTests(unittest.IsolatedAsyncioTestCase):
+    def test_normalize_keeps_only_real_quark_urls(self):
+        result = Upstream.normalize({'merged_by_type': {
+            'quark': [{'url': 'https://pan.quark.cn/s/good', 'note': 'good'},
+                      {'url': 'https://pan.baidu.com/s/spoofed'},
+                      {'url': 'https://evil.example/s/spoofed'},
+                      {'url': 'magnet:test'}],
+            'baidu': [{'url': 'https://pan.baidu.com/s/other'}]}})
+        self.assertEqual([row['url'] for row in result['results']], ['https://pan.quark.cn/s/good'])
+        self.assertEqual(result['matched_count'], 1)
+
     async def test_admin_credential_stays_server_side_and_response_is_filtered(self):
         calls = []
 
@@ -372,11 +391,9 @@ class UpstreamTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(os.environ, {'PANSOU_BASE_URL': 'https://pansou.example', 'PANSOU_USERNAME': 'admin',
                                     'PANSOU_PASSWORD': 'private-password', 'PANSOU_API_TOKEN': ''}), patch('backend.upstream.httpx.AsyncClient', factory):
             upstream = Upstream()
-            result = await upstream.search('test', 10, {'cloud_types': ['quark'], 'plugins': ['gying'], 'refresh': True})
-            status = await upstream.binding_action({'provider': 'gying', 'upstream_hash': 'a' * 64}, 'get_status', {})
+            result = await upstream.search('test', 10, {'cloud_types': ['baidu'], 'plugins': ['gying'], 'refresh': True})
         self.assertNotIn('private', json.dumps(result))
-        self.assertNotIn('cookie', status['data'])
-        self.assertNotIn('token', status['data'])
         payload = json.loads(calls[1].content)
         self.assertEqual(payload['plugins'], ['gying'])
+        self.assertEqual(payload['cloud_types'], ['quark'])
         self.assertTrue(payload['refresh'])

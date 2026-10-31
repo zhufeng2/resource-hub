@@ -29,7 +29,6 @@ PanSou API 是搜索上游，需要继续运行。API 与旧网页可能属于�
 | `/api/history` | GET | 当前用户搜索历史 |
 | `/api/preferences` | PUT | 保存搜索设置 |
 | `/api/catalog` | GET | 获取上游启用的插件和频道 |
-| `/api/bindings` | GET / POST | 列出或添加搜索源账号 |
 
 搜索返回 `search_id`、`results`、`quota` 等字段。写请求需要 `X-CSRF-Token`，浏览器 `Origin` 必须与 `PUBLIC_BASE_URL` 一致。网页用户在本项目数据库中创建，与 PanSou 上游认证账号分开。
 

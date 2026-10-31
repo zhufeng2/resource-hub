@@ -8,15 +8,12 @@ from urllib.parse import urlsplit
 
 from .errors import SearchFailure
 
-CLOUDS = {'quark', 'baidu', 'aliyun', 'guangya', 'tianyi', '115', 'xunlei', 'uc',
-          'mobile', 'pikpak', '123', 'magnet', 'ed2k', 'others'}
-CHECK_HOSTS = {'quark': {'pan.quark.cn'}, 'baidu': {'pan.baidu.com', 'yun.baidu.com'},
-               'aliyun': {'alipan.com', 'www.alipan.com', 'www.aliyundrive.com'},
-               'tianyi': {'cloud.189.cn'}, 'uc': {'drive.uc.cn'}, '115': {'115.com'},
-               '123': {'www.123pan.com', 'www.123684.com', 'www.123865.com'}}
+CHECK_HOSTS = {'quark': {'pan.quark.cn'}}
 
 
 def checkable_url(url, cloud):
+    if not isinstance(url, str):
+        return False
     try:
         parts = urlsplit(url)
         return (parts.scheme == 'https' and parts.hostname in CHECK_HOSTS.get(cloud, set())
@@ -34,8 +31,6 @@ def validate_preferences(value):
         if (not isinstance(items, list) or len(items) > 80 or
                 any(not isinstance(x, str) or not re.fullmatch(r'[\w@.-]{1,80}', x) for x in items)):
             raise ValueError('搜索源名称格式不正确')
-    if set(value.get('cloud_types', [])) - CLOUDS:
-        raise ValueError('网盘类型不正确')
     for key in ('include_words', 'exclude_words'):
         if key in value and (not isinstance(value[key], str) or len(value[key]) > 200):
             raise ValueError('关键词筛选需在 200 字符以内')
@@ -49,7 +44,13 @@ def validate_preferences(value):
                          ('theme', ('light', 'dark', 'system'))):
         if key in value and value[key] not in allowed:
             raise ValueError('配置选项不正确')
-    return value
+    return {**value, 'cloud_types': ['quark']}
+
+
+def quark_results(rows):
+    return [{**row, 'cloud_type': 'quark'} for row in rows
+            if isinstance(row, dict) and row.get('cloud_type', 'quark') == 'quark'
+            and checkable_url(row.get('url'), 'quark')]
 
 
 class SearchService:
@@ -63,7 +64,13 @@ class SearchService:
         if not 0 <= offset <= 200 or not 1 <= limit <= 200:
             return {'error': 'invalid_pagination'}
         result = json.loads(row['result'])
-        rows = result.pop('results')
+        original = result.pop('results')
+        rows = quark_results(original)
+        if len(rows) != len(original):
+            result['matched_count'] = len(rows)
+        if isinstance(result.get('options'), dict):
+            result['options'] = {**result['options'], 'cloud_types': ['quark']}
+        result.pop('source_binding', None)
         return {**result, 'search_id': row['id'], 'request_id': row['request_id'],
                 'results': rows[offset:offset + limit], 'offset': offset,
                 'returned_count': len(rows[offset:offset + limit]), 'available_count': len(rows),
@@ -117,7 +124,7 @@ class SearchService:
         data['verification'] = note + '；文件内容未核验。'
         return data
 
-    async def search(self, user, query, request_id='', options=None, execute=None, identity='', refresh=False):
+    async def search(self, user, query, request_id='', options=None, refresh=False):
         if not isinstance(query, str) or not 1 <= len(query.strip()) <= 120 or any(ord(c) < 32 for c in query):
             return {'error': 'invalid_query', 'message': '请输入 1–120 个字符的搜索词。'}
         query = query.strip()
@@ -129,7 +136,7 @@ class SearchService:
         options = {**options, 'refresh': refresh}
         request_id = request_id or secrets.token_urlsafe(24)
         selection = {k: options.get(k) for k in ('cloud_types', 'channels', 'plugins', 'src')}
-        key = json.dumps({'query': query, 'source': identity, 'refresh': refresh, **selection}, sort_keys=True, ensure_ascii=False)
+        key = json.dumps({'query': query, 'source': '', 'refresh': refresh, **selection}, sort_keys=True, ensure_ascii=False)
         if not self.store.rate('search-calls:' + str(user['id']), 30, 60):
             return {'error': 'rate_limit_exceeded', 'message': '请求过于频繁，请稍后再试。'}
         try:
@@ -141,17 +148,15 @@ class SearchService:
             row, owned = self.store.reserve(user['id'], request_id, key)
             if owned:
                 # Keep the injected two-argument backend interface for offline tests and integrations.
-                if execute is not None:
-                    result = await execute(query, self.settings.search_timeout)
-                elif hasattr(self.provider, 'search'):
+                if hasattr(self.provider, 'search'):
                     result = await self.provider.search(query, self.settings.search_timeout, options)
                 else:
                     result = await self.provider(query, self.settings.search_timeout)
                 if not isinstance(result, dict) or not isinstance(result.get('results'), list):
                     raise SearchFailure('搜索返回格式异常。')
+                result['results'] = quark_results(result['results'])
                 result['query'] = query
                 result['options'] = {k: v for k, v in options.items() if k != 'refresh'}
-                result['source_binding'] = identity
                 self.store.finish(row['id'], result)
             return self.page(user['id'], self.store.search(user['id'], row['id']))
         except ValueError as exc:

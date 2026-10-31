@@ -64,7 +64,6 @@ uvicorn backend.app:create_app --factory --host 127.0.0.1 --port 8000 --no-acces
 | `/api/history/{id}` | DELETE | 删除该账号同一关键词的记录与已保存结果，不返还额度 |
 | `/api/preferences` | PUT | 更新设置 |
 | `/api/catalog` | GET | 上游启用的来源 |
-| `/api/bindings` | GET / POST | 搜索源账号列表与创建 |
 | `/api/mcp-token` | GET / POST / DELETE | 当前登录用户查看、生成或撤销个人 MCP Token；写操作要求 CSRF |
 | `/mcp` | MCP Streamable HTTP | 助手工具入口 |
 | `/healthz` | GET | 应用健康状态 |
