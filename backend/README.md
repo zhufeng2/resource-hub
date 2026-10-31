@@ -1,21 +1,12 @@
-# 服务器部署与维护
+# 部署与维护
 
-将 Resource Hub 部署为一个同时提供网页、网页 API 和 MCP 的服务。适用于拥有 Linux 服务器、域名及 PanSou 上游访问权限的维护者。
+[项目首页](../README.md) · [网页与账号](../web/README.md) · [MCP 接入与工具](../mcp/README.md) · [开发指南](../docs/DEVELOPMENT.md)
 
-[返回项目首页](../README.md) · [网页使用](../web/README.md) · [MCP 接入](../mcp/README.md) · [连接已有 PanSou](EXISTING_PANSOU.md)
+本服务在同一个应用中提供网页、同源 API、OAuth 和 MCP，搜索固定为夸克。需要 Linux、Git、Docker Engine、Docker Compose 插件、域名及可用的 PanSou 兼容上游；本仓库不附带 PanSou 服务或上游凭据。
 
-## 部署前准备
+以下命令在仓库根目录执行。已有站点先备份配置和数据，再更新，不要用示例文件覆盖现有 `.env`。
 
-- Linux、Git、Docker Engine 和 Docker Compose 插件。
-- 解析到服务器的域名，公网 TCP 80/443 可访问。
-- 可用的 PanSou 兼容 API 地址，以及 API Token 或账号密码。
-- 80/443 可交给项目的 Caddy 使用；已有共用代理时需调整入口，避免端口冲突。
-
-本项目不附带 PanSou 搜索服务。服务器已有 PanSou 容器时，请使用[已有 PanSou 接入指南](EXISTING_PANSOU.md)，其中包含 Docker 网络和旧站迁移步骤。
-
-网页用户在 Resource Hub 中创建，上游 PanSou 凭据仅由服务器使用。公共测试站的网页地址和账号不能直接作为其他部署的 PanSou 上游配置。
-
-## 1. 下载与配置
+## 1. 下载与基础配置
 
 ```bash
 git clone https://github.com/zhufeng2/resource-hub.git
@@ -24,180 +15,263 @@ cp backend/.env.example backend/.env
 chmod 600 backend/.env
 ```
 
-已有配置时直接编辑，不要覆盖 `.env`。至少修改站点域名、上游地址和上游认证：
+编辑 `backend/.env`，填写实际域名和上游认证。Resource Hub 用户账号与 PanSou 上游账号相互独立，测试站网址不能直接充当 PanSou API。
 
-| 变量 | 说明 |
+| 变量 | 用途 |
 | --- | --- |
-| `PUBLIC_BASE_URL` | 自己的网站根地址，例如 `https://search.example.com`，不带路径 |
-| `PANSOU_BASE_URL` | 必须配置实际的 PanSou API 根地址；不能使用 Resource Hub 测试网站地址 |
-| `PANSOU_API_TOKEN` | 上游固定 Token；使用它时无需设置上游账号密码 |
-| `PANSOU_USERNAME` / `PANSOU_PASSWORD` | 上游账号密码，必须成对配置；Token 优先 |
-| `OAUTH_REDIRECT_URIS` | 客户端提供的准确 OAuth 回调地址，多个以逗号分隔 |
-| `DEFAULT_DAILY_LIMIT` | 新普通账号的每日额度，默认 5 |
-| `SEARCH_TIMEOUT` | 上游搜索超时，默认 25 秒 |
-| `SEARCH_CONCURRENCY` | 同时进行的搜索数量，默认 4 |
-| `PANSOU_ALLOW_HTTP` | 仅访问受信任的内部 HTTP 上游时设为 `true` |
+| `PUBLIC_BASE_URL` | HTTPS 站点根地址，不带路径，例如 `https://search.example.com` |
+| `PANSOU_BASE_URL` | 实际 PanSou API 根地址 |
+| `PANSOU_API_TOKEN` | 固定上游 Token；与下面的账号密码方式择一 |
+| `PANSOU_USERNAME`、`PANSOU_PASSWORD` | 上游账号密码，Token 留空时服务端自动登录 |
+| `PANSOU_ALLOW_HTTP` | 仅受信任内部 HTTP 上游设为 `true` |
+| `OAUTH_REDIRECT_URIS` | MCP 客户端提供的准确 HTTPS 回调地址，多个以逗号分隔 |
+| `DEFAULT_DAILY_LIMIT` | 新普通账号每日搜索额度，默认 5，不修改已有账号额度 |
+| `SEARCH_TIMEOUT`、`SEARCH_CONCURRENCY` | 搜索超时默认 25 秒，并发默认 4 |
+| `REGISTRATION_ENABLED` | 默认 `true`，SMTP 可用时开放注册；`false` 关闭新注册 |
+| `SMTP_*` | 验证邮件配置，见下文 |
+| `QUARK_SECRET_KEY` | 可选独立 Fernet 密钥；为空时首次绑定在数据卷生成密钥文件 |
+| `QUARK_NODE_BINARY` | 非 Docker 部署可选 Node.js 可执行文件；镜像已包含 Node.js |
 
-浏览器不需要上游凭据，不要将这些值写入前端代码。站点外部访问地址应与 `PUBLIC_BASE_URL` 一致，OAuth 回调地址需与客户端提供的值精确匹配。
+站点写请求校验 Origin 与 CSRF。浏览器只访问本站 API，不持有 PanSou 认证信息；代理或 APM 不应记录认证头和凭据请求体。
 
-### 邮箱验证注册
+## 2. 选择上游连接方式
 
-配置 `backend/.env` 后，登录窗口会显示“注册账号”。必须验证邮箱后才创建普通账号；同一邮箱只能绑定一个账号。已有账号在“安全与连接”中绑定邮箱。未配置邮件服务时注册入口关闭，原有账号仍可登录。
+### 已有本机 PanSou 容器
+
+以下用容器 `pansou-api-1`、内部端口 `8888` 为例，替换为实际值。先让两个项目共用内部网络和稳定别名：
+
+```bash
+docker network create resource-hub-upstream
+docker network connect --alias pansou-upstream resource-hub-upstream pansou-api-1
+```
+
+网络已存在或容器已连接时跳过对应命令。为避免 PanSou 重建后丢失连接，将以下配置合并到它原来的 Compose 文件，保留原有服务、挂载与网络：
+
+```yaml
+services:
+  api: # 替换为原文件中的实际服务名
+    networks:
+      default: {}
+      resource_hub:
+        aliases: [pansou-upstream]
+networks:
+  resource_hub:
+    external: true
+    name: resource-hub-upstream
+```
+
+可用容器标签定位原有 Compose 文件：
+
+```bash
+docker inspect pansou-api-1 --format '{{ index .Config.Labels "com.docker.compose.project.config_files" }}'
+```
+
+本站 `.env` 配置 `PANSOU_BASE_URL=http://pansou-upstream:8888`、`PANSOU_ALLOW_HTTP=true`，并填写真实上游 Token 或账号密码。`127.0.0.1:8888` 指向 app 容器自身，不能用来连接宿主机的 PanSou。上游必须支持所需认证、搜索和检测接口，不能用随机 Token 绕过认证。
+
+此部署加载仓库自带的覆盖文件。为避免后续命令漏掉网络配置，当前终端定义统一前缀：
+
+```bash
+dc() {
+  docker compose --project-directory backend --env-file backend/.env \
+    -f backend/compose.yaml -f backend/compose.pansou.yaml "$@"
+}
+```
+
+### 独立 HTTPS 上游
+
+如果 PanSou 已有可访问的 HTTPS API，在 `.env` 填写该地址和认证信息，并仅使用基础 Compose：
+
+```bash
+dc() {
+  docker compose --project-directory backend --env-file backend/.env \
+    -f backend/compose.yaml "$@"
+}
+```
+
+`compose.pansou.yaml` 会强制覆盖上游为内部别名，因此此布局不要加载它。下文的 `dc` 表示上面按实际布局选择的函数；开启新终端后需重新定义。
+
+## 3. 邮箱验证注册
+
+在同一份 `backend/.env` 中配置发件服务，例如 QQ 邮箱：
 
 ```dotenv
 REGISTRATION_ENABLED=true
 SMTP_HOST=smtp.qq.com
 SMTP_PORT=465
 SMTP_SECURITY=ssl
-SMTP_USERNAME=你的QQ邮箱@qq.com
-SMTP_PASSWORD=QQ邮箱SMTP授权码
-SMTP_FROM=你的QQ邮箱@qq.com
+SMTP_USERNAME=你的QQ号@qq.com
+SMTP_PASSWORD=你的SMTP授权码
+SMTP_FROM=你的QQ号@qq.com
 ```
 
-上面以 QQ 邮箱发信为例，注册邮箱不限服务商，支持 QQ、163、Gmail、Outlook 等可接收验证码的邮箱。QQ 邮箱应在设置中开启 SMTP 并生成授权码，不能填写 QQ 登录密码，参见 [QQ 邮箱官方授权码说明](https://help.mail.qq.com/detail/106/985)。其他邮件服务可修改 SMTP 参数。
+QQ 邮箱在“设置 → 账号与安全 → 安全设置”开启 SMTP 并生成授权码，参见[官方说明](https://help.mail.qq.com/detail/106/985)。授权码只放在服务器配置中。发件服务不限制注册邮箱服务商，QQ、163、Gmail、Outlook、企业邮箱等均可接收验证码。
 
-邮件服务使用 587 端口时通常配置 `SMTP_SECURITY=starttls`；始终校验证书，不支持明文连接。授权码仅放在服务器 `.env` 中。填写后重新创建应用容器使配置生效；若代码版本未变，使用 `bash update.sh --force`。设置 `REGISTRATION_ENABLED=false` 可关闭新用户注册，已有账号仍可绑定邮箱。
+其他发件服务按其参数修改；587 端口通常配 `SMTP_SECURITY=starttls`。仅支持校验证书的 SSL 或 STARTTLS，不支持明文 SMTP。SMTP 缺失或配置格式无效时注册入口关闭；`REGISTRATION_ENABLED=false` 只关闭新注册，不关闭已有账号的邮箱绑定。实际认证和投递仍需上线后验证。
 
-验证码 10 分钟有效，最多尝试 5 次，绑定浏览器会话和用途，成功后立即失效。同一邮箱每分钟最多发送 1 次、每天 5 次；同一 IP 每 10 分钟最多 3 次、每天 10 次；全站每小时最多 100 次。邮箱验证只能降低批量注册滥用，不能阻止使用多个邮箱注册。
+验证码 10 分钟有效、最多尝试 5 次，绑定当前浏览器会话及注册/绑定用途，成功后立即失效。发送限制为同邮箱每分钟 1 次、每天 5 次；同 IP 每 10 分钟 3 次、每天 10 次；全站每小时 100 次。邮箱验证降低滥用，但不能阻止使用多个邮箱注册。
 
-## 2. 启动服务
+配置变更需要重新创建 app 容器，`restart` 不会更新容器环境。首次部署随下面的构建生效；已部署后的重新加载见“更新服务”。
 
-以下命令均在仓库根目录执行：
+## 4. 启动、创建主管理员和验证
+
+域名需解析到服务器，TCP 80/443 可供自带 Caddy 使用；已有共用代理时先调整入口，避免端口冲突。基础 Compose 的 app 8000 端口只在容器网络开放。
 
 ```bash
-docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml config --quiet
-docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml up -d --build
-docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml ps
+dc config --quiet
+dc up -d --build
+dc ps
+dc exec app python -m backend.manage add-user admin --admin
 ```
 
-Caddy 根据配置自动申请 HTTPS 证书。将下面地址替换为自己的域名：
+已有 `admin` 时跳过创建，密码按提示输入，至少 12 字符。Caddy 管理 HTTPS 证书，验证站点与上游：
 
 ```bash
-curl --fail https://search.example.com/healthz
+curl --fail https://你的域名/healthz
+dc exec app python -c 'import asyncio; from backend.upstream import Upstream; asyncio.run(Upstream().catalog()); print("PanSou API connection OK")'
 ```
 
-健康检查成功只说明应用响应正常，还需用实际账号验证搜索和上游连接。
+健康检查不代表搜索已成功。再登录网站，读取公开来源并完成一次实际搜索，核对结果与额度；配置 SMTP 后以独立测试邮箱完成注册和投递验证；需要网盘时绑定自己的 Cookie，在明确授权的测试目录验证操作。Docker 构建、证书和生产上游的实际验证由部署环境完成，不把模拟测试当作上线验证。
 
-使用 `compose.pansou.yaml` 的部署，手动执行 Compose 命令时应同时传入两个文件：`-f backend/compose.yaml -f backend/compose.pansou.yaml`。完整步骤见[已有 PanSou 接入](EXISTING_PANSOU.md)。
+### 替换旧网页或代理入口
 
-## 3. 创建账号
+先确认旧网页、API 和代理各自职责：
 
 ```bash
-docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app python -m backend.manage add-user admin --admin
-docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app python -m backend.manage add-user alice --limit 5
+docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}'
+sudo ss -lntp '( sport = :80 or sport = :443 )'
 ```
 
-密码按提示输入，至少 12 个字符。先创建名为 `admin` 的管理员，之后可在网页“个人主页 → 用户管理”中管理用户；该入口只对名为 `admin` 的管理员开放。其他管理员享有不限搜索额度，但不显示网页用户管理入口。 用户列表支持删除账号，必须输入账号名确认，仅展示普通账号，禁止编辑或删除任何管理员账号；删除会清理账号、会话、Token、绑定和搜索记录，且账号编号不会复用。已提交的网盘操作不因站点账号删除而撤销。
+新域名入口应统一转发到本站 app，由 app 处理 `/`、`/assets/*`、`/api/*` 和 `/mcp`；不要把本站 `/api/*` 直接转发给 PanSou，否则会绕开账号、CSRF 和额度流程。
 
-登录网页，打开搜索设置读取来源，再执行一次搜索，检查结果与账户额度。需要 MCP 的用户继续阅读 [MCP 接入指南](../mcp/README.md)。
-
-## 账号维护
-
-在以下命令前加上本部署对应的 `docker compose ... exec app` 前缀：
+只有宿主机 Nginx 确认只提供旧网页、没有其他站点时，才按下面切换；共用代理应修改对应域名路由，不能停整个代理。先保留旧入口并启动 app：
 
 ```bash
-python -m backend.manage list-users
-python -m backend.manage set-limit alice 10
-python -m backend.manage disable-user alice
-python -m backend.manage enable-user alice
-python -m backend.manage reset-password alice
-python -m backend.manage make-admin alice
-python -m backend.manage cleanup
+dc up -d --build app
+dc ps
 ```
 
-停用账号或重置密码会撤销已有授权。重新启用后需再次登录。将普通账号额度设为 0 可暂停新搜索；`DEFAULT_DAILY_LIMIT` 只影响之后创建的账号。管理员账号不受每日额度限制。
+确认 healthy 并通过上游连接验证后，按实际安装路径备份旧 Nginx 配置，再切入口：
 
-长期 MCP Token 的签发、列出及吊销命令见 [MCP 接入指南](../mcp/README.md)。
+```bash
+sudo tar -czf /root/nginx-before-resource-hub.tar.gz /etc/nginx
+sudo systemctl stop nginx
+dc up -d proxy
+```
 
-## 更新服务
+该备份文件已存在时应换新文件名，保留旧备份。检查 HTTPS、登录、真实搜索与额度；需要回退时执行 `dc stop proxy`，再 `sudo systemctl start nginx`。稳定后才决定是否 `sudo systemctl disable nginx`；回退后需要旧入口自动启动时重新 enable。保留 PanSou API、挂载和数据卷，容器名字不能证明它可删除。
 
-首次部署完成后，在仓库根目录运行：
+## 5. 账号与权限维护
+
+网页仅名为 `admin` 的管理员能管理普通成员，支持用户名/邮箱搜索、20/50/100 条分页、创建、密码重置、额度调整、停用与垃圾桶删除。管理员账号不出现在该列表，接口也禁止编辑、删除或通过网页创建/提升管理员。
+
+删除需输入账号名确认，清理用户、会话、OAuth 与个人 Token、加密 Cookie 绑定、偏好及搜索记录。账号编号持久递增不复用。操作日志为核对已提交任务而保留，删号不能撤销已经发往夸克的操作。
+
+管理员角色通过服务器维护；提升后账号会从普通成员列表隐藏：
+
+```bash
+dc exec app python -m backend.manage list-users
+dc exec app python -m backend.manage add-user alice --limit 5
+dc exec app python -m backend.manage set-limit alice 10
+dc exec app python -m backend.manage disable-user alice
+dc exec app python -m backend.manage enable-user alice
+dc exec app python -m backend.manage reset-password alice
+dc exec app python -m backend.manage make-admin alice
+```
+
+停用或重置密码会撤销现有授权，重新启用需重新登录。管理员不限每日搜索额度，但仍限流；普通账号额度设为 0 可暂停新搜索。
+
+个人 MCP Token 默认 7 天，用户可自行在网页管理；服务器也可签发或吊销：
+
+```bash
+dc exec app python -m backend.manage issue-mcp-token alice --days 7
+dc exec app python -m backend.manage list-mcp-tokens
+dc exec app python -m backend.manage revoke-mcp-token alice
+```
+
+Token 命令会输出敏感信息，应在可信终端执行，不写入公开日志。客户端连接和全部工具集中在 [MCP 指南](../mcp/README.md)。
+
+## 6. 更新服务
+
+### 本机 PanSou 覆盖文件布局
 
 ```bash
 bash update.sh
+# 仅改了环境配置，或相同代码版本也需重建
+bash update.sh --force
 ```
 
-脚本拉取 `origin/main`、执行快进合并、构建并更新 app，等待健康检查。它保留 `.env` 和数据卷，不重启 PanSou 或入口代理。检测到 `backend/compose.pansou.yaml` 时，会自动加载覆盖配置。
+脚本从 `origin/main` 拉取并快进合并，构建、更新 app 并等待健康检查。它保留 `.env` 和数据卷，不重启 PanSou 或代理。检测到 `backend/compose.pansou.yaml` 就加载该文件，因此仓库默认脚本适合上文的本机 PanSou 网络布局。
 
-- 相同的已成功部署提交自动跳过；需要重新构建时使用 `bash update.sh --force`。
-- 本地改动冲突或分支分歧会停止，脚本不会强制覆盖。
-- 构建失败时旧应用继续运行；替换后健康检查失败需人工排查，脚本不自动回滚。
-- 修改 Caddy 配置或部署结构后，还需按变更更新代理等相关服务。
+同一已成功部署提交自动跳过，`--force` 强制重建。分支分歧、冲突、网络或构建失败会停止，不覆盖本地改动。替换后健康失败需排查，不自动回滚。脚本要求 main 分支、非交互 Git 拉取及 Bash、Git、Docker Compose、flock、mktemp、sed、cmp。
 
-脚本要求当前分支是 `main`，依赖 Bash、Git、Docker Compose、`flock`、`mktemp`、`sed` 和 `cmp`。更新前确保服务器账号能免交互拉取仓库。可用 `git remote -v` 检查远程地址；仓库地址为 `https://github.com/zhufeng2/resource-hub.git`。
+默认 Python 基础镜像为 `public.ecr.aws/docker/library/python:3.12-slim`，可用 `RESOURCE_HUB_PYTHON_IMAGE` 指定替代来源。临时构建文件、版本记录、锁和迁移备份在 `.cache/update/`，不要随意删除。
 
-默认基础镜像为 `public.ecr.aws/docker/library/python:3.12-slim`。需要更换来源时设置 `RESOURCE_HUB_PYTHON_IMAGE`；脚本生成临时构建文件，不修改仓库 Dockerfile。临时文件和部署记录位于 `.cache/update/`。手工上传且即将纳入版本管理的同名文件，只有内容匹配时才会备份后迁移；不匹配则停止。
+### 独立 HTTPS 上游或自定义布局
 
-### 定时检查更新
-
-可通过服务器的 `crontab -e` 配置。下例假设项目安装在 `/opt/apps/resource-hub`，请替换为实际路径：
-
-```cron
-*/5 * * * * /bin/bash /opt/apps/resource-hub/update.sh >> /var/log/resource-hub-update.log 2>&1
-```
-
-每 5 分钟检查一次，仅有新提交或上次部署未成功时重建。使用具有项目、Docker 和日志文件写入权限的账号，并配置日志轮转。
-
-## 备份与数据
-
-账号、授权和用量保存在 `app_data` 卷中的 SQLite 数据库。重建容器会保留数据，`docker compose down -v` 会删除数据卷。
-
-备份时停止 app 后复制数据卷，或使用 SQLite 在线备份接口。数据库使用 WAL 模式，直接复制正在写入的单个数据库文件可能遗漏数据。备份含搜索记录和认证信息，应限制访问。另行备份 `.env` 和入口代理配置，以便恢复部署。
-
-搜索关键词和结果在 24 小时后由定时清理任务擦除（最多延迟 5 分钟）；计数和请求标识最多保留 31 天。用户可删除记录并擦除关键词与结果，计次和请求标识仍按保留策略保存，防止删除记录后返还额度。详细计次规则见 [MCP 额度说明](../mcp/README.md#额度规则)。
-
-## 故障排查
-
-查看状态和最近日志：
+使用已定义的基础/自定义 `dc` 前缀更新，不加载强制内部别名的覆盖文件：
 
 ```bash
-docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml ps
-docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml logs --tail=80 app proxy
+git pull --ff-only origin main
+dc config --quiet
+dc build app
+dc up -d --no-deps --wait --wait-timeout 120 app
 ```
 
-| 现象 | 检查项 |
+只改环境配置也要重新创建 app。代理配置或部署结构变更时，按实际布局更新相关服务；只更新 app 不会应用代理变化。
+
+如需定时更新，仅在已验证适配的布局中将实际项目路径的 `update.sh` 加入 cron，并配置日志轮转和合适的 Docker/Git 权限。
+
+## 7. 数据库、密钥与备份
+
+默认数据库是 SQLite，位于容器 `/data/service.sqlite3`，持久化在 Compose 的 `app_data` 数据卷里，不在代码目录，也不会随 Git 推送。首次启动自动建表，现有数据库自动补齐邮箱字段、验证码表及用户编号计数器。注册邮箱唯一，密码使用 scrypt 哈希。
+
+```bash
+dc exec app ls -lh /data
+dc exec app python -m backend.manage cleanup
+```
+
+数据库启用 WAL 和短写事务，适合当前单机部署；高并发写入承载量需压测，不能按注册人数保证性能。不要将多台服务器通过网络文件系统共享此 SQLite 文件。
+
+| 数据 | 持久位置与恢复要求 |
 | --- | --- |
-| 证书申请或网页访问失败 | DNS、80/443、防火墙、其他代理占用及 Caddy 日志 |
-| 登录或保存设置提示请求失效 | 外部访问域名是否与 `PUBLIC_BASE_URL` 一致，会话是否过期 |
-| 健康检查正常但搜索失败 | PanSou 地址、认证、内部网络、上游实际接口 |
-| 普通搜索正常但账号绑定不可用 | PanSou 是否提供对应来源的绑定接口 |
-| 更新停止 | Git 分支、本地改动、上游网络、构建及健康检查日志 |
+| 账号、邮箱、授权、配置、搜索与用量 | `/data/service.sqlite3`，备份数据库 |
+| MCP Token 可恢复副本的密钥 | `/data/service.sqlite3.mcp.key`，与对应数据库一并保留 |
+| 夸克 Cookie 密钥 | 优先 `QUARK_SECRET_KEY`；为空时为 `/data/service.sqlite3.quark.key` |
+| 网盘操作记录与锁 | `/data/quark-operations/<用户ID>/<绑定ID>/<request_id>.json` 及相关锁 |
+| 服务配置 | 服务器 `backend/.env`、代理配置和实际 Compose 布局 |
 
-默认 Compose 将 8000 端口仅暴露给内部网络。自定义反向代理布局时，应配置实际的转发头信任范围。HTTP 访问日志默认关闭，额外启用时对授权码和令牌脱敏。
+备份时停止 app 后备份完整数据卷，或用 SQLite 在线备份接口；不要只复制正在写入的单个 `.sqlite3` 文件，WAL 中可能还有未合并数据。恢复需匹配数据库与密钥，密钥和备份按敏感数据保管。`docker compose down -v` 会删除数据卷，不能当作日常更新或缓存清理命令。
 
-开发环境、接口结构及离线测试见[开发指南](../docs/DEVELOPMENT.md)。
+搜索关键词和结果在 24 小时后擦除，自动清理间隔 5 分钟；计数和请求标识最多保留 31 天。手动删除记录同样不返还用量。验证码过期后由定时任务清理。网盘操作记录不适用搜索记录的 24 小时清理规则。
 
-## MCP Token 的展示与备份
+## 8. 凭据与网盘任务维护
 
-用户可在“个人主页 → 安全与连接 → MCP 服务”生成、查看、复制和撤销自己的 Token。网页读取接口要求登录，写操作沿用同源与 CSRF 校验；Token 认证仍绑定用户和站点资源，共享网页额度。
+Cookie 按当前登录用户和绑定标识加密，个人 Token 只认证本账号。独立 Node.js 子进程通过标准输入接收 Cookie，不放在工具参数、命令行或日志；Docker 已安装运行环境，非 Docker 需 Python 3.12、Node.js 18+ 和锁定依赖。
 
-服务器保留 Token 哈希用于认证，并用 Fernet 加密保存可恢复副本。首次签发时在数据库旁自动生成 `<数据库文件名>.mcp.key`（仅服务用户可读写）；Docker 默认与数据库一起保存在 `/data` 持久卷中。备份及恢复必须同时保留数据库和此密钥，不要提交密钥到版本库。旧版 Token 或缺少密钥时不会自动失效，但无法恢复显示，用户可主动重新生成；重新生成只轮换该用户的个人 Token，不影响 OAuth 授权。改密码、停用账号或撤销全部 MCP 授权会同时清除相关可恢复副本。
+Cookie 保存成功后默认遮罩；本人页面的显示/复制请求受登录、同源和 CSRF 保护，响应不缓存。普通绑定状态与 MCP 工具不返回 Cookie。重新绑定会隔离旧任务，不自动刷新长期登录，也不会改用共享凭据。
 
-## 安全维护
+任务提交前记录意图，`.lock` 跨进程互斥，正常结束释放。强制终止或结果不明可能留下锁；`operation_busy` 时先核对原记录、进程和真实网盘结果，不自动删锁、删记录或更换请求编号。没有任务 ID 也不能据此断言提交失败。已完成关联任务的旧操作日志可由维护者按自己的保留策略清理。
 
-Compose 为应用和代理配置日志轮转，每个容器最多保留 3 个 10 MB 日志文件。首次应用此 Compose 变更需运行当前部署使用的完整 `docker compose ... up -d` 命令，`update.sh` 只更新应用容器，不会重建代理。
+进度归零正常关机等待当前有界批次落盘，Compose 为 app 提供 60 秒退出宽限。重启后不自动恢复所有任务，用户按原参数和编号接续；解绑、停用和删号会阻止后续绑定校验通过，已经提交的操作可能继续完成。
 
-## 夸克凭据与运行环境
+## 9. 排查与上线验证
 
-服务复用 `backend/quark_client/` 中的用户接口库，每次调用启动独立 Node.js 进程；凭据通过标准输入传递，不放入命令行、工具参数或日志。Docker 构建已包含 Node.js；本地运行需 Node.js 18+，可用 `QUARK_NODE_BINARY` 指定管理员控制的可执行文件路径。
+```bash
+dc ps
+dc logs --tail=80 app proxy
+```
 
-夸克 Cookie 使用 Fernet 加密保存在 `quark_accounts` 表，用户 ID 来自已验证的网页登录会话或 MCP Token。优先通过环境变量 `QUARK_SECRET_KEY` 注入独立 Fernet 密钥（可运行 `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` 生成并保存至服务器秘密配置，勿提交版本库）。未配置时首次绑定会生成数据库旁的 `<数据库名>.quark.key`，权限 0600；生产环境建议独立秘密管理。密钥丢失或更换后旧绑定无法解密，需要重新绑定；不回退共享 Cookie。备份加密数据库与密钥时应分开保管。
+| 现象 | 核对项 |
+| --- | --- |
+| 无法访问或证书失败 | DNS、80/443、防火墙、入口占用、Caddy 日志 |
+| 请求失效 | 实际域名、`PUBLIC_BASE_URL`、会话和代理转发 |
+| 搜索失败 | 上游认证、Docker 网络、实际 API 是否兼容 |
+| 无注册入口 | 注册开关、SMTP 地址/端口/加密、发件人和认证配置 |
+| 邮件发送失败 | SMTP 授权码、出站端口、服务商限制和收件垃圾箱；不输出验证码和密码 |
+| Cookie/Token 无法显示 | 对应密钥是否保留，必要时用户主动重新绑定或生成 |
+| 更新后不生效 | 新提交是否拉取、容器是否重建、环境和覆盖文件是否匹配 |
+| 网盘操作锁定或状态未知 | 复用原编号核对记录、进程及独立回读结果 |
 
-操作记录位于数据库旁 `quark-operations/<user_id>/<binding_id>/<request_id>.json`，不含 Cookie、分享访问令牌或文件转存令牌。每次重新绑定产生新的绑定 ID，不能将旧任务带到新账号。请求编号只接受受限字符，不能指定任意记录路径或上游任务 ID。
+应用使用锁定依赖 `backend/requirements.lock`，容器非 root、只读根文件系统，日志默认轮转为每容器 3 个 10MB 文件。保持当前单进程模型，8000 不直接映射公网，反向代理信任范围按实际布局维护。不把本地 `.cache/dev-preview` 数据库或已知预览账号搬到生产。
 
-`.lock` 文件负责跨进程互斥。正常结束自动释放；进程被杀或执行超时可能留下锁，此时返回 operation_busy，管理员先核对该记录、进程与实际网盘结果，再决定如何恢复；不得自动清锁、删除记录或换编号重新转存。记录提交意图但没有任务 ID 时同样停止，不假设提交失败。锁和任务记录需要随数据卷持久化，不应按搜索记录的 24 小时策略清理。
-
-解绑只删除当前加密凭据，不撤销夸克登录 Cookie、不取消已经提交的上游任务。操作记录保留用于核对，管理员可在确认所有关联任务已结束后按自己的保留策略清理。站点/代理/APM 禁止记录绑定接口请求体和认证请求头。已有 OAuth scope 名称 `search` 为兼容而保留，夸克读写访问由用户主动绑定授予；不能把该 scope 名称解释为整个 MCP 永远只读。
-
-Cookie 显示/复制使用 POST `/api/quark-account/reveal`，要求网页登录、同源、CSRF，始终从会话取得用户 ID；响应 no-store，不允许指定其他用户。GET 状态和 MCP 工具仍不返回 Cookie。
-
-
-## 本轮上线前确认
-
-镜像从 `backend/requirements.lock` 安装本轮验证过的固定依赖；`requirements.txt` 保留顶层依赖声明，更新依赖后应重建锁文件、扫描并回归，不能只改声明文件。非 Docker 运行使用 Python 3.12、Node.js 18+，同样安装锁文件。
-
-按上文配置 backend/.env 后，先运行 `docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml config --quiet`，再按当前部署所需的覆盖文件启动构建。随后核对健康检查、HTTPS、OAuth/MCP、一次实际搜索及独立测试目录的网盘操作。使用 PanSou 覆盖文件时，这些命令都要带上 `-f backend/compose.pansou.yaml`。
-
-不要复制本地 `.cache/dev-preview` 数据库到生产环境，其中是已知密码的预览管理员和测试授权。已有生产数据必须备份再迁移，沿用对应加密密钥；新生产账号独立创建并重新绑定夸克。应用8000端口不要映射公网，保持单进程运行，代理/APM不记录凭据请求体。
-
-本轮没有代为部署服务器，Docker构建、证书与真实生产上游验证须在服务器完成。
+首次部署及重要更新后，实际验证 HTTPS、注册邮件、登录、普通用户管理、一次搜索、MCP 认证与独立测试目录中的网盘功能。离线测试和开发方法见[开发指南](../docs/DEVELOPMENT.md)。

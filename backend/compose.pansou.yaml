@@ -1,5 +1,5 @@
 # Use with compose.yaml after connecting the existing PanSou container to this network.
-# See EXISTING_PANSOU.md. The alias must also be kept in PanSou's own Compose file.
+# See README.md (upstream connection and update sections). The alias must also be kept in PanSou's own Compose file.
 services:
   app:
     environment:

@@ -251,5 +251,6 @@ body.has-results .search-stage{background:linear-gradient(180deg,var(--veil) 0,v
 [data-registration-fields]>input{display:block;width:100%;margin:0 0 16px}
 [data-registration-fields]>.email-code-row{margin:0 0 16px}
 
-#users-table .user-actions{white-space:nowrap}
-#users-table .user-actions button+button{margin-left:14px}
+#users-table .user-actions{vertical-align:middle;white-space:nowrap}
+#users-table .user-action-buttons{display:flex;align-items:center;gap:12px}
+#users-table .user-action-buttons>.text-button{display:inline-flex;align-items:center;justify-content:center;height:44px;min-height:44px;padding:0;line-height:1}

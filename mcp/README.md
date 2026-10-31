@@ -1,158 +1,109 @@
-# MCP 接入指南
+# MCP 接入与工具
 
-Resource Hub 通过 MCP 向助手提供资源搜索、读取结果、额度查询和用户绑定的夸克网盘操作。网页与 MCP 使用同一账号，搜索记录和额度共享。
+[项目首页](../README.md) · [网页与账号](../web/README.md) · [部署与维护](../backend/README.md) · [开发指南](../docs/DEVELOPMENT.md)
 
-[返回项目首页](../README.md) · [网页使用](../web/README.md) · [服务器部署](../backend/README.md)
+MCP 与网页共用 Resource Hub 账号、搜索记录及额度。公开资源搜索只返回夸克分享；个人网盘操作使用当前账号在网站绑定的夸克 Cookie。工具不接收 Cookie、站点密码或 MCP Token 参数。
 
-## 服务地址与账号
+## 连接服务
 
-MCP 地址是在 Resource Hub 网站根地址后加 `/mcp`。测试站地址为：
+先按[网页指南](../web/README.md#注册登录与邮箱)注册或取得账号。进入“个人主页 → 安全与连接 → MCP 服务”复制实际地址；在线站点入口为 `https://pan.sysscitech.com/mcp`，自建服务为自己的根地址加 `/mcp`。
 
-```text
-https://pan.sysscitech.com/mcp
-```
+### Bearer Token
 
-账号由站点管理员提供。自建服务请使用自己的域名。这个地址是 MCP 入口，不是 PanSou 上游 API，也不是夸克授权入口。
-
-## OAuth 连接
-
-适用于支持 OAuth 的 MCP 客户端：
-
-1. 添加自定义 MCP 服务，填写站点的 `/mcp` 地址。
-2. 选择 OAuth 认证，打开 Resource Hub 授权页。
-3. 输入站点账号和密码，确认授权。
-4. 返回助手，调用搜索或额度工具验证连接。
-
-ChatGPT 可按以上流程连接。管理员需要将客户端显示的准确回调地址配置到 `OAUTH_REDIRECT_URIS`。本服务支持动态客户端注册、Authorization Code + PKCE S256，Token 端点认证方式为 `none`，授权范围为 `search`。
-
-授权页过期、已使用或 Cookie 无效时，从客户端重新发起连接，不要重复提交旧页面。OAuth 连接仍处于开发阶段；当前网页主要提供通用 MCP Token 管理。
-
-## Bearer Token 连接
-
-适用于支持 Streamable HTTP 与自定义请求头的客户端，不限于 ChatGPT。登录网页，进入“个人主页 → 安全与连接 → MCP 服务”，生成当前账号的 Token，并复制 HTTP 地址与 Token。在客户端配置：
+支持 Streamable HTTP 和自定义请求头的客户端使用：
 
 ```text
 URL: https://你的域名/mcp
 Authorization: Bearer 你的MCP令牌
 ```
 
-该 Token 由 Resource Hub 签发，不能填入 `PANSOU_API_TOKEN`，也不能使用 PanSou 的 Token 替代。Token 按用户隔离并共享账号额度，默认有效期 7 天。登录后可随时显示和复制自己的 Token；服务器加密保存可恢复副本，不在网页本地存储中持久化。旧版仅有哈希的 Token 仍能认证，但无法显示，需主动重新生成一次。重新生成会使原 Token 立即失效，客户端需更新配置；单独撤销 Token 不影响 OAuth。
+Token 在网站生成、显示、复制和撤销，默认有效期 7 × 24 小时。重新生成立即轮换旧 Token，过期或轮换后需更新客户端配置。Token 由 Resource Hub 签发，不能与 PanSou 上游 Token 混用；不要把带真实令牌的客户端配置提交到仓库。
 
-有效期自签发时起计算为 7 × 24 小时；重新生成后开始新的 7 天，旧 Token 立即失效。过期后登录网页重新生成，并更新客户端中的 `Authorization: Bearer <Token>` 请求头。已有 Token 保留签发时的到期时间；改为一星期需主动重新生成。网页不展示请求头示例或到期时间，配置说明以本文为准。网页登录会话仍为 7 天，OAuth 访问令牌另行管理。
+服务器保存认证哈希及加密的可恢复副本。旧版只有哈希或密钥丢失时，原 Token 可能仍能认证但不能显示，可主动重新生成。单独撤销个人 Token 不撤销 OAuth；改密码、停用或删除账号会撤销已有授权。
 
-### DeepSeek Harness 配置示例
+### OAuth
 
-在 Profile patch（`$DSH_HOME/profiles/<profile>/cordis.patch.yml`）中合并：
+支持 OAuth 的客户端填写相同 MCP 地址，打开 Resource Hub 授权页，登录并授权后返回客户端。服务实现动态客户端注册、Authorization Code + PKCE S256，Token 端点认证方式为 `none`；管理员需把客户端给出的准确回调地址加入 `OAUTH_REDIRECT_URIS`。
 
-```yaml
-- insert:
-    - id: resource-hub-mcp
-      name: '@deepseek-ai/dsh-mcp-client'
-      config:
-        serverName: resource-hub
-        transport: streamable-http
-        url: https://你的域名/mcp
-        headers:
-          Authorization: Bearer 你的MCP令牌
-```
+授权页过期、已使用或 Cookie 无效时，从客户端重新发起连接。OAuth scope 名称 `search` 为兼容而保留，不代表绑定夸克后整个服务只读；网盘操作仍按当前用户绑定和工具参数限制执行。OAuth 与 SMTP 配置由[部署指南](../backend/README.md)统一维护。
 
-将地址和令牌替换为管理员提供的实际值，再按客户端方式加载配置。不要把含真实 Token 的配置提交到仓库。
+## 工具一览
 
-### 管理员签发与吊销
+调用时不传 `ctx`，这是服务端提供的请求上下文。下表省略自动上下文，`execute` 默认 `false`，其他可选参数以客户端实时读取的工具 schema 为准。
 
-以下命令在已部署服务的仓库根目录执行。连接已有 PanSou、使用了 Compose 覆盖文件时，在 `exec` 前增加 `-f backend/compose.pansou.yaml`。
-
-```bash
-docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app python -m backend.manage issue-mcp-token alice --days 7
-docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app python -m backend.manage list-mcp-tokens
-docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app python -m backend.manage revoke-mcp-token alice
-```
-
-签发前账号必须已存在。命令行签发的 Token 也可由对应用户登录网页后查看和复制；吊销后客户端需重新配置。OAuth 授权与长期 MCP Token 使用不同管理入口，停用账号或重置密码会撤销已有授权。
-
-## 工具
-
-| 工具 | 参数 | 用途与计次 |
+| 工具 | 主要参数 | 功能 |
 | --- | --- | --- |
-| `search_resources` | `query`，可选 `request_id` | 搜索夸克分享；成功计 1 次，零结果也计次 |
-| `get_search_results` | `search_id`，可选 `offset`、`limit` | 读取本账号已有结果；不重新搜索、不扣新额度 |
-| `get_quota` | 无 | 查询今日用量、剩余及重置时间；免费 |
+| `search_resources` | `query`、可选 `request_id` | 搜索夸克分享，成功计 1 次 |
+| `get_search_results` | `search_id`、`offset=0`、`limit=20` | 翻页已有搜索结果，不创建新搜索 |
+| `get_quota` | 无 | 查询当前账号额度 |
+| `quark_status` | 无 | 查询夸克绑定状态，不返回 Cookie |
+| `quark_list_files` | `parent_fid='0'`、`page=1`、`size=50` | 读取个人目录 |
+| `quark_search_files` | `query`、`page=1`、`size=50` | 搜索个人网盘 |
+| `quark_file_info` | `fid` | 读取个人文件元数据 |
+| `quark_share_files` | `share_url`、`parent_fid='0'`、`passcode=''`、`page=1`、`size=50` | 分页读取分享目录 |
+| `quark_create_folder` | `parent_fid`、`name`、`request_id`、`execute` | 创建目录 |
+| `quark_create_text_file` | `parent_fid`、`name`、`content`、`request_id`、`execute` | 创建 `.txt` / `.md` |
+| `quark_save_file` | `share_url`、`fid`、`to_parent_fid`、`request_id`、可选 `passcode`、`execute` | 转存一个文件 |
+| `quark_save_entries` | `share_url`、`fids`、`source_parent_fid`、`to_parent_fid`、`request_id`、可选 `passcode`、`execute` | 转存文件或整个目录 |
+| `quark_rename` | `fid`、`name`、`request_id`、`execute` | 重命名文件或目录 |
+| `quark_move` | `fids`、`to_parent_fid`、`request_id`、`execute` | 移动文件或目录 |
+| `quark_reset_folder_progress` | `folder_fid`、`folder_name`、`request_id`、`include_subfolders=true`、`explicitly_requested=false`、`execute` | 指定文件夹的视频进度归零 |
+| `quark_operation_status` | `request_id` | 查询当前绑定下原操作的状态 |
 
-`query` 为 1–120 字符，`request_id` 最多 80 字符，允许字母、数字、短横线和下划线。同一账号重试同一搜索时复用 `request_id`，可避免重复计次。
+当前没有删除网盘文件、任意二进制上传或读取客户端本地路径的工具。管理员删除 Resource Hub 账号是网页管理功能，与删除网盘文件不同。
 
-每次搜索最多保存前 200 条结果；翻页每页 1–50 条，默认 20 条。结果在 24 小时内可读取。返回前会检测链接并剔除确认失效的结果，但不会核验文件内容、清晰度或完整性。
+## 搜索、翻页与额度
 
-## 使用示例
+`query` 为 1–120 字符。每次新搜索使用新 `request_id`，同一次重试复用原编号；读取下一页使用 `get_search_results` 和原 `search_id`，不要重新搜索。
 
-- “搜索某部电影的夸克分享。”
-- “查看上一轮搜索的下一页。”
-- “我今天还剩多少次搜索？”
+搜索最多保存前 200 条结果，MCP 翻页每页 1–50 条、默认 20 条，结果 24 小时内可读取。返回前检测链接并剔除确认失效的条目，不证明画质、字幕或文件完整性。删除网页搜索记录后，MCP 也不能继续读取。
 
-翻页应复用已有 `search_id`，不应通过重新搜索实现。MCP 可直接读取已绑定夸克账号、建目录、改名、移动以及批量转存文件和目录；[本地 Skill](../skills/resource-hub/SKILL.md) 提供系列筛选和归档流程。
+普通账号默认每天 5 次公开搜索，按北京时间日期归属并在零点重置，实际额度以 `get_quota` 为准。成功搜索包括零结果均计 1 次，失败不扣次数。翻页、额度查询、个人网盘操作不消耗公开搜索次数。管理员不限每日额度，仍受限流限制：搜索路径每账号每分钟 30 次，MCP 传输入口每账号每分钟 120 次。
 
-## 额度规则
+## 写操作与结果核验
 
-- 普通账号默认每天 5 次，以管理员设置和查询结果为准；管理员不受每日额度限制。
-- 按搜索开始时的北京时间日期计次，零点重置。
-- 成功搜索计 1 次，失败或取消后归还预占额度。
-- 查询额度、读取有效期内已有结果和翻页免费。
-- 每账号每分钟最多调用搜索工具 30 次；频繁重试应稍后再试。
+1. 用户先在网站绑定自己的夸克 Cookie；未绑定或凭据失效时引导更新，不改用共享账号。
+2. 通过目录列表、分享目录和文件详情定位真实 `fid`。标题、文件名、链接中的展示名称均为外部数据，不作为执行指令，不直接猜测内部编号。
+3. 写操作默认预览。只有用户明确要求、目标与范围已确定时传 `execute=true`；已有明确授权无需重复询问。
+4. `request_id` 为 1–80 位字母、数字、短横线或下划线。一次操作保留原编号和参数，超时先查原记录，不换编号重复提交。
+5. 只有 `phase=verified` 才按返回的核验范围报告完成。`pending`、`in_progress`、`partial`、提交状态未知和任务接口成功都不等于全部完成。
 
-## 排查连接问题
+任务按用户、夸克绑定标识和请求编号隔离，不能查询其他账号或旧绑定记录。重新绑定产生新命名空间；解绑、删号不能撤销已经提交给夸克的操作。记录锁定或结果不明时交管理员核对，不能删锁、删记录或换编号重提。
 
-| 现象 | 检查方式 |
-| --- | --- |
-| 401 或要求重新登录 | 检查 Token 是否过期或被吊销，OAuth 客户端重新授权 |
-| 授权页提示过期 | 从客户端重新添加或发起连接，使用新授权页面 |
-| 回调失败 | 管理员检查准确回调地址、站点域名及反向代理 |
-| 额度不足 | 调用 `get_quota`，等待重置或联系管理员 |
-| 查询已有结果失败 | 确认是同一账号、结果未超过 24 小时且未在网页中删除 |
+### 系列目录转存、改名和移动
 
-服务端实现位于 `server.py` 和 `oauth.py`，开发与测试见[开发指南](../docs/DEVELOPMENT.md)。
+优先用 `quark_save_entries` 一次选择同一分享父目录下的 1–100 个文件或文件夹；整系列目录可直接转存，不必逐集调用。不同分享、不同父目录分别建操作，不能自动全选无关条目。
 
-## 夸克网盘绑定与操作
+`quark_move` 一次移动 1–100 个条目，移动目录会整体调整位置。改名、移动和转存遇到同名条目时不覆盖、不合并；不能将目录移入自身或后代。
 
-用户在网站“个人主页 → 安全与连接 → 夸克网盘”填写一整行 Cookie，验证并保存。Cookie 仅通过登录会话及 CSRF 保护的 HTTPS POST 提交，安全页加载本人已保存 Cookie 并使用密码遮罩，点击显示才能看到明文；读取接口有登录会话、同源与 CSRF 保护，不作为工具参数。绑定后，该用户已授权的 MCP 客户端即可读取网盘、转存和创建目录。
-
-| 工具 | 用途 |
-| --- | --- |
-| `quark_status` | 查看绑定状态，不返回凭据 |
-| `quark_list_files` | 按 parent_fid、page、size 读取个人目录 |
-| `quark_search_files` | 个人网盘搜索，已通过小范围真实验证 |
-| `quark_file_info` | 读取个人文件允许的元数据 |
-| `quark_share_files` | 按真实目录 fid 分页读取分享，不返回令牌 |
-| `quark_create_folder` | 指定父目录及名称创建目录，默认预览 |
-| `quark_create_text_file` | 创建观看指南等非空UTF-8 .txt/.md，最多32KiB，默认预览 |
-| `quark_save_file` | 选定单文件转存到指定目录，默认预览 |
-| `quark_operation_status` | 以 request_id 查询当前绑定的操作记录 |
-
-写工具需要 request_id（1–80 位字母、数字、短横线或下划线），execute 默认 false；明确执行时设为 true。同一操作的重试或续查必须复用原参数和原编号，不改变编号重新提交。不同用户、绑定及操作记录独立；更新绑定后旧记录不会在新账号继续运行。任务结束不等于目标核验完成，只有 phase=verified 才表示操作通过核验。
-
-夸克操作不扣公开资源搜索额度，仍受 MCP 限流约束。分享目录为有界分页，未读完不能判完整。可用 `quark_create_text_file` 创建观看指南；不支持任意二进制上传和删除。建目录与个人搜索已通过小范围真实验证。Cookie 更新只在单次调用中保留，不构成长期自动刷新登录。
-
-解绑后后续请求不能再使用该凭据；已发送至夸克的操作可能继续完成。更新绑定前应先处理未完成任务。
-
-
-### 批量转存与系列整理
-
-- `quark_save_entries(share_url, fids, source_parent_fid, to_parent_fid, request_id, execute=false)`：一次提交同一分享目录中明确选中的 1–100 个文件或文件夹。整系列文件夹可直接原生转存，无需逐集调用；内部获取令牌，不自动全选无关条目。不同分享或不同父目录分别建立操作。
-- `quark_rename(fid, name, request_id, execute=false)`：修改个人文件或文件夹名称，适用于系列目录重命名。
-- `quark_move(fids, to_parent_fid, request_id, execute=false)`：一次移动 1–100 个个人文件或文件夹。移动系列文件夹会整体调整其位置，不逐集移动。
-
-这些工具同样默认预览；execute=true 才执行，重试复用原参数及编号。遇到同名条目不覆盖、不合并，暂停并返回 name_conflict。移动会读取实际目标祖先，拒绝将目录移入自身或后代。任务记录在提交前建立，响应不明时不自动重提。
-
-批量转存不依赖返回 ID 的顺序，按目标 ID、名称、类型、文件大小和目标目录核对选中顶层条目。目录成功返回 verification_scope=selected_top_level_entries、descendants_verified=false，明确没有对目录内部做完整递归审计；不能据此保证全系列完整。目录转存、改名和移动已完成小范围真实写入及回读验证。文本创建已完成真实回读验证；任意二进制上传和删除未实现。接口协议、研究脚本与实测归档统一维护在独立的 reverse-engineering-research/夸克网盘 项目。
-
-
-### 指定文件夹观看进度归零
-
-`quark_reset_folder_progress(folder_fid, folder_name, request_id, include_subfolders=true, explicitly_requested=false, execute=false)` 只处理明确指定文件夹内的视频，拒绝根目录 0，并核对实际文件夹名称。只有用户明确要求该范围观看进度全部归零时，才能设置 explicitly_requested=true、execute=true；不会因搜索或转存而触发。
-
-复用研究项目 `examples/set-progress.cjs` 和 `src/playback.cjs` 的已封装接口：每个视频只上报一次 `source=PLAY / extra.play_progress=0`，之后延迟回读个人详情的 `last_play_info.time`；不把业务成功直接当作进度持久化成功。提交状态不明时，仅继续回读，不重复上报。
-
-大系列一次提交后在服务器后台自动接续，单批20秒预算、最多100项，最多3项并发；`background_running=true` 时只需每隔至少10秒查询 `quark_operation_status`。后台最多2个归零任务、每用户最多1个，停滞3批或30分钟后暂停；暂停后用原参数、原请求编号接续。服务正常退出等待当前批次落盘，强制中断留下锁时需管理员核对。目录枚举最多200个目录、10000个条目、2000个视频，完整枚举失败不开始写入。已移动到范围外的文件停止处理。缺少有效时长的条目计入 skipped，返回 partial；只有全部确认是0才返回 verified。原版本已按用户明确指令在真实 MCP 完成指定第一季12集归零；新版120集、并发与后台自动接续通过模拟/集成测试，没有重复修改用户进度。
-
+目录转存的 `verification_scope=selected_top_level_entries` 和 `descendants_verified=false` 表示只核对选中顶层条目，没有完整递归审计目录内部，不能由此宣称全系列完整。
 
 ### 创建观看指南
 
-`quark_create_text_file(parent_fid, name, content, request_id, execute=false)` 将明确提供的文本直接写入指定目录，支持非空 UTF-8 `.txt`、`.md`，最多32KiB。文本创建请求体上限256KiB，以容纳JSON转义及参数；其他工具仍限定16KiB。不会读取客户端路径或覆盖同名条目。只有 `phase=verified`、`content_verified=true` 才表示独立下载回读与原文逐字节一致；下载地址和正文不出现在工具响应。任务记录仅保存内容摘要。同参数同编号重试不会重复上传，提交结果不明时仅回读核验。
+`quark_create_text_file` 接受非空 UTF-8 `.txt` / `.md`，最多 32768 字节（32KiB），按 UTF-8 字节数限制，不按字符数。它不读取本地路径，不覆盖同名文件。只有 `phase=verified` 且 `content_verified=true` 才表示文件元数据及独立下载回读的内容与原文一致。接口响应不返回正文、下载地址或上传授权。
+
+### 指定文件夹观看进度归零
+
+必须由用户明确指定某个文件夹或系列文件夹并要求进度全部归零，核对真实 `folder_fid` 与准确 `folder_name`；拒绝根目录 `0`。执行时同时设置 `explicitly_requested=true`、`execute=true`，不能从搜索、转存或整理意图推断归零授权。
+
+默认包含子文件夹，可用 `include_subfolders=false` 仅处理直接子项。完整枚举上限为 200 个目录、10000 个条目、2000 个视频，枚举失败不开始写入。缺少时长、范围变化或未确认的条目需如实报告，不能说全部完成。
+
+一次提交后后台自动接续：每批最多 100 项、20 秒协作预算，最多 3 个视频并发。`background_running=true` 时每隔至少 10 秒查询 `quark_operation_status`，不逐批调用归零工具。后台最多 2 个任务、每用户 1 个，停滞 3 批或运行 30 分钟后暂停；暂停或服务重启后用原参数和编号接续。已提交且结果不明的条目只回读，不重复上报；只有全部确认进度为 0 才返回 `verified`。
+
+## 可选助手流程
+
+[本地 Skill](../skills/resource-hub/SKILL.md) 提供系列筛选、补齐、归档和上述工具的编排约定，安装见[项目首页](../README.md#自行部署或安装流程说明)。业务实现只在服务端维护，不依赖官方夸克 Skill。
+
+## 排查问题
+
+| 现象 | 处理 |
+| --- | --- |
+| 401、令牌失效 | 重新生成个人 Token 或重新授权 OAuth |
+| OAuth 回调失败 | 核对回调白名单、站点地址和代理配置 |
+| 额度不足 | `get_quota` 查询并等待重置，或联系管理员 |
+| 旧结果打不开 | 确认账号一致、24 小时内且未在网页删除 |
+| 未绑定或凭据不可用 | 在本人网页更新夸克 Cookie，不在聊天提供凭据 |
+| `operation_busy`、提交结果不明 | 保留原编号，由管理员核对原记录和实际结果 |
+| `partial`、`scope_changed` | 检查未处理项及目录变化，按原编号查询或接续 |
+
+服务器账号维护、Token 命令、任务锁和备份统一见[部署指南](../backend/README.md)。实现位于 `backend/mcp/server.py`、`backend/mcp/oauth.py` 与 `backend/quark.py`。

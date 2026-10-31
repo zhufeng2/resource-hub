@@ -13,7 +13,7 @@ async function loadUsers(){
     const data=await api('/api/users?'+params);
     if(state.csrf!==owner||request!==usersList.request||!state.user?.can_manage_users)return;
     usersList.page=data.page;usersList.pages=data.pages;
-    $('users-table').replaceChildren(...data.items.filter(user=>!user.is_admin).map(user=>node('tr',{},[node('td',{text:user.username}),node('td',{text:user.email||'未绑定'}),node('td',{text:user.is_admin?'管理员':'成员'}),node('td',{text:user.is_admin?'不限':user.daily_limit+' 次'}),node('td',{},[node('span',{class:'pill',text:user.enabled?'正常':'已停用'})]),node('td',{class:'user-actions'},[node('button',{class:'text-button',text:'编辑',onclick:()=>userEditor(user)}),...(String(user.id)!==String(state.user.id)&&user.username!=='admin'?[userDeleteButton(user)]:[])])])));
+    $('users-table').replaceChildren(...data.items.filter(user=>!user.is_admin).map(user=>node('tr',{},[node('td',{text:user.username}),node('td',{text:user.email||'未绑定'}),node('td',{text:user.is_admin?'管理员':'成员'}),node('td',{text:user.is_admin?'不限':user.daily_limit+' 次'}),node('td',{},[node('span',{class:'pill',text:user.enabled?'正常':'已停用'})]),node('td',{class:'user-actions'},[node('div',{class:'user-action-buttons'},[node('button',{class:'text-button',text:'编辑',onclick:()=>userEditor(user)}),...(String(user.id)!==String(state.user.id)&&user.username!=='admin'?[userDeleteButton(user)]:[])])])])));
     if(!data.items.length)$('users-table').append(node('tr',{},[node('td',{colspan:'6',class:'users-empty',text:usersList.query?'没有找到匹配的账号':'暂无用户'})]));
     $('users-summary').textContent='共 '+data.total+' 个用户';
     $('users-page').textContent=data.page+' / '+data.pages;
