@@ -91,6 +91,11 @@ class Store:
             db.execute('''CREATE TABLE IF NOT EXISTS email_codes (
                 key TEXT PRIMARY KEY, code_hash TEXT NOT NULL, expires REAL NOT NULL,
                 attempts INTEGER NOT NULL DEFAULT 0)''')
+            db.execute('''CREATE TABLE IF NOT EXISTS user_id_counter (
+                singleton INTEGER PRIMARY KEY CHECK(singleton=1), value INTEGER NOT NULL)''')
+            db.execute('INSERT OR IGNORE INTO user_id_counter VALUES(1,0)')
+            self.remember_user_ids(db)
+
 
     @contextmanager
     def connection(self, write=False):
@@ -157,13 +162,49 @@ class Store:
         with self.connection(True) as db:
             db.execute('DELETE FROM quark_accounts WHERE user_id=?', (user_id,))
 
+    @staticmethod
+    def remember_user_ids(db):
+        db.execute('''UPDATE user_id_counter SET value=max(value,coalesce((SELECT max(id) FROM users),0))
+            WHERE singleton=1''')
+
+    def next_user_id(self, db):
+        self.remember_user_ids(db)
+        db.execute('UPDATE user_id_counter SET value=value+1 WHERE singleton=1')
+        return db.execute('SELECT value FROM user_id_counter WHERE singleton=1').fetchone()[0]
+
+    def delete_user(self, user_id, username, actor_id):
+        with self.connection(True) as db:
+            actor = db.execute("SELECT 1 FROM users WHERE id=? AND username='admin' AND is_admin=1 AND enabled=1",
+                               (actor_id,)).fetchone()
+            if not actor:
+                raise PermissionError('仅 admin 账号可以管理用户。')
+            target = db.execute('SELECT username FROM users WHERE id=?', (user_id,)).fetchone()
+            if not target:
+                raise ValueError('account_not_found')
+            if user_id == actor_id or target['username'] == 'admin':
+                raise ValueError('protected_account')
+            if username != target['username']:
+                raise ValueError('confirmation_mismatch')
+            # Persist the high-water mark before removing the highest existing ID.
+            self.remember_user_ids(db)
+            db.execute('DELETE FROM tokens WHERE user_id=?', (user_id,))
+            db.execute('DELETE FROM codes WHERE user_id=?', (user_id,))
+            db.execute('DELETE FROM web_sessions WHERE user_id=?', (user_id,))
+            db.execute('DELETE FROM searches WHERE user_id=?', (user_id,))
+            db.execute('DELETE FROM preferences WHERE user_id=?', (user_id,))
+            db.execute('DELETE FROM quark_accounts WHERE user_id=?', (user_id,))
+            # Older installations may still have the removed source-account table.
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='bindings'").fetchone():
+                db.execute('DELETE FROM bindings WHERE user_id=?', (user_id,))
+            db.execute('DELETE FROM users WHERE id=?', (user_id,))
+
     def add_user(self, username, password, limit, is_admin=False):
         if not username or len(username) > 64 or not 12 <= len(password) <= 256 or not 0 <= limit <= 10000:
             raise ValueError('用户名需为 1–64 字符；密码需为 12–256 字符；额度需为 0–10000')
         encoded = password_hash(password)
         with self.connection(True) as db:
-            db.execute('INSERT INTO users(username,password,daily_limit,is_admin) VALUES(?,?,?,?)',
-                       (username, encoded, limit, int(is_admin)))
+            db.execute('INSERT INTO users(id,username,password,daily_limit,is_admin) VALUES(?,?,?,?,?)',
+                       (self.next_user_id(db), username, encoded, limit, int(is_admin)))
 
     def save_email_code(self, key, code_hash):
         with self.connection(True) as db:
@@ -195,8 +236,8 @@ class Store:
                     or not hmac.compare_digest(row['code_hash'], code_hash)):
                 return False
             if user_id is None:
-                db.execute('INSERT INTO users(username,password,daily_limit,is_admin,email) VALUES(?,?,?,0,?)',
-                           (username, encoded, limit, email))
+                db.execute('INSERT INTO users(id,username,password,daily_limit,is_admin,email) VALUES(?,?,?,?,0,?)',
+                           (self.next_user_id(db), username, encoded, limit, email))
             else:
                 changed = db.execute('UPDATE users SET email=? WHERE id=? AND enabled=1 AND email IS NULL',
                                      (email, user_id)).rowcount
@@ -205,10 +246,10 @@ class Store:
             db.execute('DELETE FROM email_codes WHERE key=?', (key,))
         return True
 
-    def change_user(self, username, *, enabled=None, password=None, limit=None, is_admin=None):
+    def change_user(self, username, *, enabled=None, password=None, limit=None, is_admin=None, expected_id=None):
         with self.connection(True) as db:
             row = db.execute('SELECT id FROM users WHERE username=?', (username,)).fetchone()
-            if not row:
+            if not row or expected_id is not None and row['id'] != expected_id:
                 raise ValueError('账号不存在')
             if enabled is not None:
                 db.execute('UPDATE users SET enabled=? WHERE id=?', (int(enabled), row['id']))
@@ -253,6 +294,8 @@ class Store:
     def web_session(self, user_id):
         token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
         with self.connection(True) as db:
+            if not db.execute('SELECT 1 FROM users WHERE id=? AND enabled=1', (user_id,)).fetchone():
+                raise ValueError('账号不存在或已停用')
             db.execute('INSERT INTO web_sessions VALUES(?,?,?,?)',
                        (digest(token), user_id, csrf, time.time() + 7 * 86400))
         return token, csrf
@@ -275,6 +318,8 @@ class Store:
         migrate = None
         with self.connection(value is not None) as db:
             if value is not None:
+                if not db.execute('SELECT 1 FROM users WHERE id=? AND enabled=1', (user_id,)).fetchone():
+                    raise ValueError('账号不存在或已停用')
                 # Mark the preference so a later explicit opt-out is respected.
                 value = {**value, 'verification_defaults_v2': True, 'cloud_types': ['quark']}
                 db.execute('INSERT OR REPLACE INTO preferences VALUES(?,?)', (user_id, json.dumps(value)))

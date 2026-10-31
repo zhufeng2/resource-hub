@@ -133,6 +133,65 @@ class WebTests(unittest.TestCase):
         self.assertEqual(edited.status_code, 200)
         self.assertEqual(self.client.get('/api/users?q=member24').json()['items'][0]['daily_limit'], 9)
 
+    def test_admin_deletes_user_and_revokes_all_account_access(self):
+        bob = self.store.login('bob', PASSWORD)
+        user_id = bob['id']
+        web_token, _ = self.store.web_session(user_id)
+        token = self.store.issue_mcp_token('bob', self.settings.resource)
+        self.store.bind_quark(user_id, 'sid=test-only')
+        self.store.preferences(user_id, {'theme': 'dark'})
+        self.store.reserve(user_id, 'pending-delete', 'test')
+        with self.store.connection(True) as db:
+            db.execute("INSERT INTO codes VALUES('test-code',?,'client','redirect','challenge','resource',9999999999)", (user_id,))
+        headers = self.web_login('admin')
+        response = self.client.request('DELETE', f'/api/users/{user_id}', json={'username': 'bob'}, headers=headers)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIsNone(self.store.login('bob', PASSWORD))
+        self.assertIsNone(self.store.web_user(web_token))
+        self.assertIsNone(self.store.authenticate(token, self.settings.resource))
+        self.assertIsNone(self.store.quark_account(user_id))
+        with self.store.connection() as db:
+            for table in ('users', 'tokens', 'codes', 'web_sessions', 'searches', 'preferences', 'quark_accounts'):
+                column = 'id' if table == 'users' else 'user_id'
+                self.assertEqual(db.execute(f'SELECT count(*) FROM {table} WHERE {column}=?', (user_id,)).fetchone()[0], 0)
+            self.assertEqual(db.execute('SELECT count(*) FROM mcp_token_secrets WHERE hash=?', (digest(token),)).fetchone()[0], 0)
+        self.assertIsNotNone(self.store.login('alice', PASSWORD))
+        self.assertEqual(self.client.request('DELETE', f'/api/users/{user_id}', json={'username': 'bob'}, headers=headers).status_code, 404)
+
+    def test_delete_user_requires_owner_admin_csrf_and_matching_confirmation(self):
+        user_id = self.store.login('bob', PASSWORD)['id']
+        for username in ('bob', 'alice'):
+            headers = self.web_login(username)
+            self.assertEqual(self.client.request('DELETE', f'/api/users/{user_id}', json={'username': 'bob'}, headers=headers).status_code, 403)
+        headers = self.web_login('admin')
+        self.assertEqual(self.client.request('DELETE', f'/api/users/{user_id}', json={'username': 'bob'}).status_code, 403)
+        self.assertEqual(self.client.request('DELETE', f'/api/users/{user_id}', json={'username': 'wrong'}, headers=headers).status_code, 400)
+        admin_id = self.store.login('admin', PASSWORD)['id']
+        self.assertEqual(self.client.request('DELETE', f'/api/users/{admin_id}', json={'username': 'admin'}, headers=headers).status_code, 403)
+        self.assertIsNotNone(self.store.login('bob', PASSWORD))
+
+    def test_deleted_highest_id_is_not_reused_after_restart_or_registration(self):
+        self.store.add_user('last-user', PASSWORD, 5)
+        old_id = self.store.login('last-user', PASSWORD)['id']
+        headers = self.web_login('admin')
+        response = self.client.request('DELETE', f'/api/users/{old_id}', json={'username': 'last-user'}, headers=headers)
+        self.assertEqual(response.status_code, 200)
+        restarted = Store(self.settings.database)
+        restarted.add_user('last-user', PASSWORD, 5)
+        new_id = restarted.login('last-user', PASSWORD)['id']
+        self.assertGreater(new_id, old_id)
+        with self.assertRaises(ValueError):
+            restarted.web_session(old_id)
+        with self.assertRaises(ValueError):
+            restarted.preferences(old_id, {'theme': 'dark'})
+        with self.assertRaises(ValueError):
+            restarted.change_user('last-user', password=PASSWORD + 'changed', expected_id=old_id)
+        self.assertIsNotNone(restarted.login('last-user', PASSWORD))
+        # Registration uses the same monotonic ID allocator.
+        restarted.save_email_code('key', 'proof')
+        self.assertTrue(restarted.verify_email_account('key', 'proof', 'new@example.com', username='registered', password=PASSWORD))
+        self.assertGreater(restarted.login('registered', PASSWORD)['id'], new_id)
+
     def test_delete_history_requires_owner_and_csrf_and_erases_content(self):
         self.assertEqual(self.client.delete('/api/history').status_code, 401)
         self.assertEqual(self.client.delete('/api/history/missing').status_code, 401)

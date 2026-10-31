@@ -13,7 +13,7 @@ async function loadUsers(){
     const data=await api('/api/users?'+params);
     if(state.csrf!==owner||request!==usersList.request||!state.user?.can_manage_users)return;
     usersList.page=data.page;usersList.pages=data.pages;
-    $('users-table').replaceChildren(...data.items.map(user=>node('tr',{},[node('td',{text:user.username}),node('td',{text:user.email||'未绑定'}),node('td',{text:user.is_admin?'管理员':'成员'}),node('td',{text:user.is_admin?'不限':user.daily_limit+' 次'}),node('td',{},[node('span',{class:'pill',text:user.enabled?'正常':'已停用'})]),node('td',{},[node('button',{class:'text-button',text:'编辑',onclick:()=>userEditor(user)})])])));
+    $('users-table').replaceChildren(...data.items.map(user=>node('tr',{},[node('td',{text:user.username}),node('td',{text:user.email||'未绑定'}),node('td',{text:user.is_admin?'管理员':'成员'}),node('td',{text:user.is_admin?'不限':user.daily_limit+' 次'}),node('td',{},[node('span',{class:'pill',text:user.enabled?'正常':'已停用'})]),node('td',{class:'user-actions'},[node('button',{class:'text-button',text:'编辑',onclick:()=>userEditor(user)}),...(String(user.id)!==String(state.user.id)&&user.username!=='admin'?[node('button',{class:'text-button danger-text',text:'删除',onclick:()=>confirmDeleteUser(user)})]:[])])])));
     if(!data.items.length)$('users-table').append(node('tr',{},[node('td',{colspan:'6',class:'users-empty',text:usersList.query?'没有找到匹配的账号':'暂无用户'})]));
     $('users-summary').textContent='共 '+data.total+' 个用户';
     $('users-page').textContent=data.page+' / '+data.pages;
@@ -34,3 +34,17 @@ function userEditor(user=null){
   form.addEventListener('submit',async(event)=>{event.preventDefault();try{await api('/api/users',{method:user?'PATCH':'POST',body:JSON.stringify({username:username.value,password:password.value,daily_limit:Number(limit.value),is_admin:admin.checked,enabled:enabled.checked})});closeModal();loadUsers();toast(user?'账号已更新':'账号已创建');}catch(error){toast(message(error));}});openModal(user?'编辑账号':'创建用户',form);
 }
 $('add-user').addEventListener('click',()=>userEditor());
+
+function confirmDeleteUser(user){
+  const form=node('form'),confirm=node('input',{required:'',autocomplete:'off',maxlength:'64',placeholder:'输入账号名确认', 'aria-label':'输入账号名确认'}),submit=node('button',{type:'submit',class:'primary',text:'删除账号',disabled:true}),owner=state.csrf;
+  form.append(node('p',{text:'删除账号“'+user.username+'”及其登录、授权、绑定和搜索记录？此操作无法恢复。'}),confirm,node('div',{class:'form-actions'},[node('button',{type:'button',class:'secondary',text:'取消',onclick:closeModal}),submit]));
+  confirm.addEventListener('input',()=>submit.disabled=confirm.value!==user.username);
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();if(confirm.value!==user.username||state.csrf!==owner)return;submit.disabled=true;
+    try{
+      await api('/api/users/'+encodeURIComponent(user.id),{method:'DELETE',body:JSON.stringify({username:confirm.value})});
+      if(state.csrf!==owner)return;closeModal();await loadUsers();toast('账号已删除');
+    }catch(error){if(state.csrf===owner){toast(message(error));submit.disabled=confirm.value!==user.username;}}
+  });
+  openModal('删除账号',form);
+}

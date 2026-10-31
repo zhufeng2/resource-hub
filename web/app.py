@@ -301,9 +301,9 @@ class Web:
         if not self.store.rate('password:' + str(user['id']), 10, 300):
             raise WebError('尝试次数过多，请稍后重试。', 429)
         verified = await asyncio.to_thread(self.store.login, user['username'], old)
-        if not verified:
-            raise WebError('当前密码不正确。')
-        self.store.change_user(user['username'], password=new)
+        if not verified or verified['id'] != user['id']:
+            raise WebError('当前密码不正确或账号已失效。')
+        self.store.change_user(user['username'], password=new, expected_id=user['id'])
         response = reply({'ok': True, 'message': '密码已更新，请重新登录。'})
         response.delete_cookie(COOKIE, path='/')
         return response
@@ -350,6 +350,28 @@ class Web:
                 raise WebError('密码格式不正确。')
             self.store.change_user(username, limit=limit, password=password,
                                    enabled=data.get('enabled'), is_admin=data.get('is_admin'))
+        return reply({'ok': True})
+
+    async def delete_user(self, request):
+        admin = self.user(request, write=True, admin=True)
+        if admin['username'] != 'admin':
+            raise WebError('仅 admin 账号可以管理用户。', 403)
+        user_id = request.path_params['user_id']
+        if not 1 <= user_id <= 2**63 - 1:
+            raise WebError('账号不存在。', 404)
+        data = await self.body(request)
+        if set(data) != {'username'} or not isinstance(data['username'], str):
+            raise WebError('请输入要删除的账号名确认。')
+        try:
+            self.store.delete_user(user_id, data['username'], admin['id'])
+        except PermissionError as exc:
+            raise WebError(str(exc), 403) from None
+        except ValueError as exc:
+            if str(exc) == 'account_not_found':
+                raise WebError('账号不存在。', 404) from None
+            if str(exc) == 'protected_account':
+                raise WebError('不能删除主管理员账号。', 403) from None
+            raise WebError('输入的账号名不一致。') from None
         return reply({'ok': True})
 
     async def check_links(self, request):
@@ -409,6 +431,7 @@ class Web:
             ('/api/quark-account', self.quark_account, ['GET', 'POST', 'DELETE']),
             ('/api/quark-account/reveal', self.reveal_quark_cookie, ['POST']),
             ('/api/users', self.users, ['GET', 'POST', 'PATCH']),
+            ('/api/users/{user_id:int}', self.delete_user, ['DELETE']),
             ('/api/check', self.check_links, ['POST'])]
         return [Route(path, self.wrap(handler), methods=methods) for path, handler, methods in definitions] + [
             Mount('/assets', StaticFiles(directory=STATIC))]

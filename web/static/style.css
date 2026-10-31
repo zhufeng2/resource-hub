@@ -250,3 +250,6 @@ body.has-results .search-stage{background:linear-gradient(180deg,var(--veil) 0,v
 [data-registration-fields]>label{display:block;margin:0 0 8px;font-size:13px;color:var(--muted)}
 [data-registration-fields]>input{display:block;width:100%;margin:0 0 16px}
 [data-registration-fields]>.email-code-row{margin:0 0 16px}
+
+#users-table .user-actions{white-space:nowrap}
+#users-table .user-actions button+button{margin-left:14px}
