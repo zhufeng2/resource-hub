@@ -83,7 +83,7 @@ class Web:
                 'quota': self.store.quota(user['id']), 'preferences': self.store.preferences(user['id']),
                 'csrf': user['csrf'], 'mcp_url': self.settings.resource,
                 'preview': bool(getattr(self.upstream, 'preview', False)),
-                'email': user.get('email'), 'email_binding_enabled': self.mailer.ready}
+                'email': user.get('email')}
 
     async def revoke_connections(self, request):
         user = self.user(request, write=True)
@@ -120,7 +120,8 @@ class Web:
         if user:
             return reply(self.profile(user))
         csrf = secrets.token_urlsafe(32)
-        response = reply({'authenticated': False, 'csrf': csrf, 'registration_enabled': self.mailer.registration_open})
+        response = reply({'authenticated': False, 'csrf': csrf, 'registration_enabled': self.mailer.registration_open,
+                          'password_reset_enabled': self.mailer.ready})
         response.delete_cookie('rh_login', path='/api/login')
         response.set_cookie('rh_login', csrf, secure=self.settings.secure, httponly=True,
                             samesite='strict', max_age=600, path='/api')
@@ -129,16 +130,31 @@ class Web:
     def registration_csrf(self, request):
         if not self.mailer.registration_open:
             raise WebError('注册暂未开放。', 503)
+        return self.anonymous_csrf(request)
+
+    def anonymous_csrf(self, request):
         csrf = request.cookies.get('rh_login', '')
         if (request.headers.get('origin') != self.settings.base_url or not csrf or len(csrf) > 128 or
                 not hmac.compare_digest(csrf, request.headers.get('x-csrf-token', ''))):
             raise WebError('请刷新页面后重试。', 403)
         return csrf
 
+    def password_reset_csrf(self, request):
+        if not self.mailer.ready:
+            raise WebError('邮箱找回暂不可用，请联系管理员。', 503)
+        return self.anonymous_csrf(request)
+
     def email_limit(self, request, action, maximum, window):
         ip = request.client.host if request.client else 'unknown'
         if not self.store.rate('email:' + action + ':' + digest(ip), maximum, window):
             raise WebError('操作过于频繁，请稍后再试。', 429)
+
+    def mailbox_limit(self, email):
+        # Shared by registration, legacy binding and password recovery.
+        if (not self.store.rate('mail-minute:' + digest(email), 1, 60) or
+                not self.store.rate('mail-day:' + digest(email), 5, 86400) or
+                not self.store.rate('mail-global', 100, 3600)):
+            raise WebError('验证码发送过于频繁，请稍后再试。', 429)
 
     async def email_code(self, request):
         binding = request.url.path == '/api/email/code'
@@ -158,10 +174,7 @@ class Web:
             raise WebError('请求参数不正确。')
         email = normalize_email(data['email'])
         # Mailbox limits apply across IPs, browser sessions, and both purposes.
-        if (not self.store.rate('mail-minute:' + digest(email), 1, 60) or
-                not self.store.rate('mail-day:' + digest(email), 5, 86400) or
-                not self.store.rate('mail-global', 100, 3600)):
-            raise WebError('验证码发送过于频繁，请稍后再试。', 429)
+        self.mailbox_limit(email)
         result = {'ok': True, 'message': '如邮箱可用，验证码将发送至该邮箱，请检查收件箱和垃圾邮件。'}
         if not self.store.email_available(email):
             return reply(result)
@@ -174,6 +187,59 @@ class Web:
             self.store.remove_email_code(key, proof)
             raise WebError('邮件发送失败，请稍后重试或联系管理员。', 503) from None
         return reply(result)
+
+    async def password_reset_code(self, request):
+        csrf = self.password_reset_csrf(request)
+        self.email_limit(request, 'send', 3, 600)
+        self.email_limit(request, 'send-day', 10, 86400)
+        data = await self.body(request)
+        if set(data) != {'email'}:
+            raise WebError('请求参数不正确。')
+        email = normalize_email(data['email'])
+        self.mailbox_limit(email)
+        result = {'ok': True, 'message': '如邮箱对应有效账号，验证码将发送至该邮箱，请检查收件箱和垃圾邮件。'}
+        account = self.store.password_reset_account(email)
+        if not account:
+            return reply(result)
+        code = f'{secrets.randbelow(1000000):06d}'
+        purpose = 'password-reset:' + str(account['id']) + ':' + digest(account['password'])
+        key, proof = code_identity(email, purpose, csrf, code)
+        self.store.save_email_code(key, proof)
+        try:
+            await self.mailer.send(email, code)
+        except Exception:
+            self.store.remove_email_code(key, proof)
+            # Delivery errors must not disclose whether the mailbox owns an account.
+        return reply(result)
+
+    async def reset_password(self, request):
+        csrf = self.password_reset_csrf(request)
+        self.email_limit(request, 'verify', 20, 300)
+        if not self.store.rate('email-verify-global', 120, 300):
+            raise WebError('操作过于频繁，请稍后再试。', 429)
+        data = await self.body(request)
+        if set(data) != {'email', 'code', 'password'}:
+            raise WebError('重置参数不正确。')
+        email, code, password = normalize_email(data['email']), data['code'], data['password']
+        if not isinstance(code, str) or not re.fullmatch(r'[0-9]{6}', code):
+            raise WebError('请输入 6 位邮箱验证码。')
+        if not isinstance(password, str) or not 12 <= len(password) <= 256:
+            raise WebError('密码需为 12–256 个字符。')
+        account = self.store.password_reset_account(email)
+        verified = False
+        if account:
+            purpose = 'password-reset:' + str(account['id']) + ':' + digest(account['password'])
+            key, proof = code_identity(email, purpose, csrf, code)
+            verified = await asyncio.to_thread(self.store.reset_password_with_code, key, proof, email,
+                account['id'], account['password'], password)
+        if not verified:
+            raise WebError('验证码错误、已过期或尝试次数过多，请重新获取。')
+        response = reply({'ok': True, 'message': '密码已重置，请使用新密码登录。'})
+        # Resetting somebody else's account must not log out the browser's current user.
+        current = self.store.web_user(request.cookies.get(COOKIE, ''))
+        if not current:
+            response.delete_cookie(COOKIE, path='/')
+        return response
 
     async def register_account(self, request):
         csrf = self.registration_csrf(request)
@@ -422,6 +488,8 @@ class Web:
         definitions = [('/', self.index, ['GET']), ('/profile', self.index, ['GET']), ('/api/session', self.session, ['GET']),
             ('/api/login', self.login, ['POST']), ('/api/logout', self.logout, ['POST']),
             ('/api/register/code', self.email_code, ['POST']), ('/api/register', self.register_account, ['POST']),
+            ('/api/password/reset/code', self.password_reset_code, ['POST']),
+            ('/api/password/reset', self.reset_password, ['POST']),
             ('/api/email/code', self.email_code, ['POST']), ('/api/email', self.bind_email, ['POST']),
             ('/api/search', self.search, ['POST']), ('/api/results/{id}', self.results, ['GET']),
             ('/api/history', self.history, ['GET']), ('/api/history', self.delete_history, ['DELETE']),

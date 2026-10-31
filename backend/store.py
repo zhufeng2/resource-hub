@@ -219,6 +219,38 @@ class Store:
         with self.connection() as db:
             return not db.execute('SELECT 1 FROM users WHERE email=?', (email,)).fetchone()
 
+    def password_reset_account(self, email):
+        with self.connection() as db:
+            row = db.execute('SELECT id,password FROM users WHERE email=? AND enabled=1', (email,)).fetchone()
+            return dict(row) if row else None
+
+    def reset_password_with_code(self, key, proof, email, user_id, expected_password, password):
+        if not isinstance(password, str) or not 12 <= len(password) <= 256:
+            raise ValueError('密码需为 12–256 字符')
+        with self.connection(True) as db:
+            row = db.execute('SELECT * FROM email_codes WHERE key=?', (key,)).fetchone()
+            if not row or row['expires'] <= time.time() or row['attempts'] >= 5:
+                return False
+            if not hmac.compare_digest(row['code_hash'], proof):
+                db.execute('UPDATE email_codes SET attempts=attempts+1 WHERE key=?', (key,))
+                return False
+        encoded = password_hash(password)
+        # Recheck after hashing: exactly one concurrent caller can consume a proof.
+        with self.connection(True) as db:
+            row = db.execute('SELECT * FROM email_codes WHERE key=?', (key,)).fetchone()
+            if (not row or row['expires'] <= time.time() or row['attempts'] >= 5
+                    or not hmac.compare_digest(row['code_hash'], proof)):
+                return False
+            changed = db.execute('''UPDATE users SET password=?
+                WHERE id=? AND email=? AND enabled=1 AND password=?''',
+                (encoded, user_id, email, expected_password)).rowcount
+            if not changed:
+                return False
+            db.execute('DELETE FROM email_codes WHERE key=?', (key,))
+            for table in ('tokens', 'codes', 'web_sessions'):
+                db.execute(f'DELETE FROM {table} WHERE user_id=?', (user_id,))
+        return True
+
     def verify_email_account(self, key, code_hash, email, *, username=None, password=None, limit=5, user_id=None):
         # Invalid attempts must commit; consume the valid code and create/bind in one transaction.
         with self.connection(True) as db:
