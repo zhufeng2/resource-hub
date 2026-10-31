@@ -112,9 +112,9 @@ class WebTests(unittest.TestCase):
             db.executemany('INSERT INTO users(username,password,daily_limit) VALUES(?,?,?)',
                            [(f'member{i:02}', password, 5) for i in range(25)])
         first = self.client.get('/api/users').json()
-        self.assertEqual((first['total'], first['page'], first['pages'], len(first['items'])), (28, 1, 2, 20))
+        self.assertEqual((first['total'], first['page'], first['pages'], len(first['items'])), (26, 1, 2, 20))
         second = self.client.get('/api/users?page=2').json()
-        self.assertEqual(len(second['items']), 8)
+        self.assertEqual(len(second['items']), 6)
         self.assertFalse({u['id'] for u in first['items']} & {u['id'] for u in second['items']})
         self.assertEqual(set(first['items'][0]), {'id', 'username', 'enabled', 'daily_limit', 'is_admin', 'email'})
         result = self.client.get('/api/users?q=MEMBER&page_size=10&page=2').json()
@@ -132,6 +132,23 @@ class WebTests(unittest.TestCase):
         edited = self.client.patch('/api/users', json={'username': 'member24', 'daily_limit': 9}, headers=headers)
         self.assertEqual(edited.status_code, 200)
         self.assertEqual(self.client.get('/api/users?q=member24').json()['items'][0]['daily_limit'], 9)
+
+    def test_admin_accounts_hidden_and_cannot_be_managed(self):
+        headers = self.web_login('admin')
+        listing = self.client.get('/api/users').json()
+        self.assertEqual([user['username'] for user in listing['items']], ['bob'])
+        self.assertEqual(self.client.get('/api/users?q=admin').json()['total'], 0)
+        self.assertEqual(self.client.get('/api/users?q=alice').json()['total'], 0)
+        for username in ('admin', 'alice'):
+            user_id = self.store.login(username, PASSWORD)['id']
+            for changes in ({'password': PASSWORD + 'changed'}, {'daily_limit': 1}, {'enabled': False}, {'is_admin': False}):
+                response = self.client.patch('/api/users', json={'username': username, **changes}, headers=headers)
+                self.assertEqual(response.status_code, 403, response.text)
+            response = self.client.request('DELETE', f'/api/users/{user_id}', json={'username': username}, headers=headers)
+            self.assertEqual(response.status_code, 403, response.text)
+            self.assertTrue(self.store.login(username, PASSWORD)['is_admin'])
+        self.assertEqual(self.client.patch('/api/users', json={'username': 'bob', 'is_admin': True}, headers=headers).status_code, 403)
+        self.assertEqual(self.client.post('/api/users', json={'username': 'another-admin', 'password': PASSWORD, 'is_admin': True}, headers=headers).status_code, 403)
 
     def test_admin_deletes_user_and_revokes_all_account_access(self):
         bob = self.store.login('bob', PASSWORD)

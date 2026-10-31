@@ -405,9 +405,9 @@ html { scrollbar-gutter:stable both-edges; }
 /* History titles open results; the only row action is a compact trash button. */
 .history-title { display:block;max-width:100%;padding:0;border:0;background:none;color:var(--ink);font-size:15px;font-weight:550;line-height:1.6;text-align:left;overflow-wrap:anywhere; }
 .history-title:hover { color:var(--accent); }
-.history-delete { width:44px;height:44px;min-height:44px;flex:none; }
-.history-delete svg { width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round; }
-.history-delete:hover { color:var(--danger);background:rgb(180 35 24 / 6%); }
+.trash-button { width:44px;height:44px;min-height:44px;flex:none; }
+.trash-button svg { width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round; }
+.trash-button:hover { color:var(--danger);background:rgb(180 35 24 / 6%); }
 @media(max-width:480px) {
   .history-row { flex-wrap:nowrap; }
   .history-row>div:first-child { flex:1;min-width:0; }

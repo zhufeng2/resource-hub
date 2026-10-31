@@ -329,6 +329,8 @@ class Web:
         limit = data.get('daily_limit', self.settings.default_limit)
         if 'is_admin' in data and type(data['is_admin']) is not bool:
             raise WebError('账号状态格式不正确。')
+        if data.get('is_admin') is True:
+            raise WebError('用户管理仅支持普通账号。', 403)
         if type(limit) is not int:
             raise WebError('每日额度必须是整数。')
         if request.method == 'POST':
@@ -340,8 +342,8 @@ class Web:
             target = self.store.managed_user(username)
             if not target:
                 raise WebError('账号不存在。', 404)
-            if target['id'] == admin['id'] and (data.get('enabled') is False or data.get('is_admin') is False):
-                raise WebError('请使用另一个管理员账号修改当前账号权限。')
+            if target['is_admin'] or target['username'] == 'admin':
+                raise WebError('不能在用户管理中修改管理员账号。', 403)
             for key in ('enabled', 'is_admin'):
                 if key in data and type(data[key]) is not bool:
                     raise WebError('账号状态格式不正确。')
@@ -370,7 +372,7 @@ class Web:
             if str(exc) == 'account_not_found':
                 raise WebError('账号不存在。', 404) from None
             if str(exc) == 'protected_account':
-                raise WebError('不能删除主管理员账号。', 403) from None
+                raise WebError('不能删除管理员账号。', 403) from None
             raise WebError('输入的账号名不一致。') from None
         return reply({'ok': True})
 

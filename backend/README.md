@@ -87,7 +87,7 @@ docker compose --project-directory backend --env-file backend/.env -f backend/co
 docker compose --project-directory backend --env-file backend/.env -f backend/compose.yaml exec app python -m backend.manage add-user alice --limit 5
 ```
 
-密码按提示输入，至少 12 个字符。先创建名为 `admin` 的管理员，之后可在网页“个人主页 → 用户管理”中管理用户；该入口只对名为 `admin` 的管理员开放。其他管理员享有不限搜索额度，但不显示网页用户管理入口。 用户列表支持删除账号，必须输入账号名确认，禁止删除主管理员；删除会清理账号、会话、Token、绑定和搜索记录，且账号编号不会复用。已提交的网盘操作不因站点账号删除而撤销。
+密码按提示输入，至少 12 个字符。先创建名为 `admin` 的管理员，之后可在网页“个人主页 → 用户管理”中管理用户；该入口只对名为 `admin` 的管理员开放。其他管理员享有不限搜索额度，但不显示网页用户管理入口。 用户列表支持删除账号，必须输入账号名确认，仅展示普通账号，禁止编辑或删除任何管理员账号；删除会清理账号、会话、Token、绑定和搜索记录，且账号编号不会复用。已提交的网盘操作不因站点账号删除而撤销。
 
 登录网页，打开搜索设置读取来源，再执行一次搜索，检查结果与账户额度。需要 MCP 的用户继续阅读 [MCP 接入指南](../mcp/README.md)。
 

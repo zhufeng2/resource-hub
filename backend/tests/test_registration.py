@@ -102,7 +102,7 @@ class RegistrationTests(unittest.TestCase):
         self.mail.assert_awaited_once()
 
     def test_existing_account_binding_and_admin_email_search(self):
-        self.headers = self.web_login('alice')
+        self.headers = self.web_login('bob')
         code = self.send('Owner@Example.com', binding=True)
         # A binding code cannot be repurposed for registration.
         self.assertEqual(self.register(code, email='owner@example.com').status_code, 403)
@@ -112,8 +112,8 @@ class RegistrationTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/email/code', json={'email': 'other@example.com'}, headers=self.headers).status_code, 400)
         self.headers = self.web_login('admin')
         result = self.client.get('/api/users?q=OWNER@EXAMPLE.COM').json()
-        self.assertEqual([u['username'] for u in result['items']], ['alice'])
-        self.headers = self.web_login('bob')
+        self.assertEqual([u['username'] for u in result['items']], ['bob'])
+        self.headers = self.web_login('alice')
         before = self.mail.await_count
         # Clear mailbox cooldown solely to exercise the duplicate-mailbox response.
         with self.store.connection(True) as db:
@@ -155,7 +155,7 @@ class RegistrationTests(unittest.TestCase):
         migrated = Store(path)
         self.assertIsNone(migrated.login('legacy-admin', PASSWORD)['email'])
         self.assertEqual(migrated.login('legacy-admin', PASSWORD)['is_admin'], 1)
-        self.assertEqual(Store(path).user_page()['total'], 1)
+        self.assertEqual(Store(path).user_page()['total'], 0)
 
     def test_input_validation(self):
         for domain in ['qq.com', '163.com', 'gmail.com', 'outlook.com', 'foxmail.com', 'company.example']:

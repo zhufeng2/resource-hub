@@ -178,10 +178,10 @@ class Store:
                                (actor_id,)).fetchone()
             if not actor:
                 raise PermissionError('仅 admin 账号可以管理用户。')
-            target = db.execute('SELECT username FROM users WHERE id=?', (user_id,)).fetchone()
+            target = db.execute('SELECT username,is_admin FROM users WHERE id=?', (user_id,)).fetchone()
             if not target:
                 raise ValueError('account_not_found')
-            if user_id == actor_id or target['username'] == 'admin':
+            if user_id == actor_id or target['is_admin'] or target['username'] == 'admin':
                 raise ValueError('protected_account')
             if username != target['username']:
                 raise ValueError('confirmation_mismatch')
@@ -276,19 +276,19 @@ class Store:
     def user_page(self, query='', page=1, page_size=20):
         with self.connection() as db:
             total = db.execute("""SELECT count(*) FROM users
-                WHERE instr(lower(username), lower(?)) > 0 OR instr(coalesce(email, ''), lower(?)) > 0""",
+                WHERE is_admin=0 AND (instr(lower(username), lower(?)) > 0 OR instr(coalesce(email, ''), lower(?)) > 0)""",
                 (query, query)).fetchone()[0]
             pages = max(1, (total + page_size - 1) // page_size)
             page = min(page, pages)
             items = [dict(row) for row in db.execute(
                 """SELECT id,username,enabled,daily_limit,is_admin,email FROM users
-                WHERE instr(lower(username), lower(?)) > 0 OR instr(coalesce(email, ''), lower(?)) > 0
+                WHERE is_admin=0 AND (instr(lower(username), lower(?)) > 0 OR instr(coalesce(email, ''), lower(?)) > 0)
                 ORDER BY id LIMIT ? OFFSET ?""", (query, query, page_size, (page - 1) * page_size))]
         return {'items': items, 'total': total, 'page': page, 'page_size': page_size, 'pages': pages}
 
     def managed_user(self, username):
         with self.connection() as db:
-            row = db.execute('SELECT id,username FROM users WHERE username=?', (username,)).fetchone()
+            row = db.execute('SELECT id,username,is_admin FROM users WHERE username=?', (username,)).fetchone()
             return dict(row) if row else None
 
     def web_session(self, user_id):

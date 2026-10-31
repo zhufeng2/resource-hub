@@ -180,10 +180,14 @@ function renderHistory(){
   ])));
   if(!state.history.length)$('profile-history').append(node('div',{class:'profile-empty'},[node('h3',{text:'还没有搜索记录'}),node('p',{text:'从一个关键词开始，你的搜索会记录在这里'}),node('a',{href:'/',class:'secondary','data-home':'',text:'开始搜索'})]));
 }
-function historyDeleteButton(item){
-  const button=node('button',{class:'icon-button history-delete',type:'button','aria-label':'删除搜索记录 '+item.query,title:'删除记录'});
+function trashButton(label,title,extraClass=''){
+  const button=node('button',{class:'icon-button trash-button '+extraClass,type:'button','aria-label':label,title});
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
   const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d','M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6m4-6v6');svg.append(path);button.append(svg);
+  return button;
+}
+function historyDeleteButton(item){
+  const button=trashButton('删除搜索记录 '+item.query,'删除记录','history-delete');
   button.addEventListener('click',()=>deleteHistory(item,button));return button;
 }
 let historyDeleteBusy=false;
