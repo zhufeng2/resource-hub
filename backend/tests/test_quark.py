@@ -244,7 +244,8 @@ class QuarkTests(unittest.TestCase):
                 self.assertEqual(result['phase'], 'verified')
                 self.assertFalse(result['background_running'])
                 self.assertEqual(calls, 3)
-        asyncio.run(verify())
+        # Keep background jobs on the same loop as QuarkService.close().
+        self.client.portal.call(verify)
 
     def test_reset_stops_on_rebinding_or_repeated_stagnation(self):
         self.bind()
@@ -267,4 +268,5 @@ class QuarkTests(unittest.TestCase):
                 await job['task']
                 self.assertEqual(run.await_count, before)
                 self.assertFalse(job['running'])
-        asyncio.run(verify())
+        # Keep background jobs on the same loop as QuarkService.close().
+        self.client.portal.call(verify)
