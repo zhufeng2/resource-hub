@@ -270,3 +270,56 @@ class QuarkTests(unittest.TestCase):
                 self.assertFalse(job['running'])
         # Keep background jobs on the same loop as QuarkService.close().
         self.client.portal.call(verify)
+
+    def test_app_cookie_session_requires_owner_csrf_and_never_caches_response(self):
+        self.assertEqual(self.client.post('/api/quark-account/session', json={}).status_code, 401)
+        bound = self.bind('sid=app-fixture; __puus=video-fixture')
+        headers = self.web_login()
+        self.assertEqual(self.client.post('/api/quark-account/session', json={}).status_code, 403)
+        self.assertIn(self.client.get('/api/quark-account/session').status_code, (404, 405))
+        self.assertEqual(self.client.post('/api/quark-account/session', json={'user_id': 1}, headers=headers).status_code, 400)
+        response = self.client.post('/api/quark-account/session', json={}, headers=headers)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.headers['cache-control'], 'no-store')
+        self.assertEqual(response.json()['id'], bound['id'])
+        uid = self.store.login('alice', PASSWORD)['id']
+        self.assertEqual(response.json()['cookie'], self.store.quark_account(uid, secret=True)['cookie'])
+        self.assertNotIn('cookie', self.client.get('/api/quark-account').json())
+        other = self.web_login('bob')
+        self.assertEqual(self.client.post('/api/quark-account/session', json={}, headers=other).json(), {'bound': False})
+
+    def test_cookie_session_follows_manual_rebind_and_unbind(self):
+        self.bind('sid=first-fixture; __puus=first-video-fixture')
+        headers = self.web_login()
+        first = self.client.post('/api/quark-account/session', json={}, headers=headers).json()
+        self.bind('sid=second-fixture; __puus=second-video-fixture')
+        headers = self.web_login()
+        second = self.client.post('/api/quark-account/session', json={}, headers=headers).json()
+        self.assertNotEqual(first['id'], second['id'])
+        self.assertEqual(second['cookie'], 'sid=second-fixture; __puus=second-video-fixture')
+        self.client.delete('/api/quark-account', headers=headers)
+        self.assertEqual(self.client.post('/api/quark-account/session', json={}, headers=headers).json(), {'bound': False})
+
+    def test_cookie_session_reads_version_and_cookie_in_a_single_snapshot(self):
+        headers = self.web_login()
+        row = {'id': 'snapshot-fixture', 'updated_at': 1, 'cookie': 'sid=snapshot-fixture'}
+        with patch.object(self.store, 'quark_account', return_value=row) as saved:
+            response = self.client.post('/api/quark-account/session', json={}, headers=headers)
+        self.assertEqual(response.json(), {'bound': True, **row})
+        self.assertEqual(saved.call_count, 1)
+        self.assertTrue(saved.call_args.kwargs['secret'])
+
+    def test_cookie_session_refuses_swapped_ciphertext_and_disabled_user(self):
+        self.bind('sid=alice-fixture')
+        alice = self.store.login('alice', PASSWORD)['id']
+        bob = self.store.login('bob', PASSWORD)['id']
+        self.store.bind_quark(bob, 'sid=bob-fixture')
+        with self.store.connection(True) as db:
+            row = db.execute('SELECT ciphertext FROM quark_accounts WHERE user_id=?', (bob,)).fetchone()
+            db.execute('UPDATE quark_accounts SET ciphertext=? WHERE user_id=?', (row['ciphertext'], alice))
+        response = self.client.post('/api/quark-account/session', json={}, headers=self.web_login())
+        self.assertEqual(response.status_code, 422)
+        self.assertNotIn('bob-fixture', response.text)
+        headers = self.web_login()
+        self.store.change_user('alice', enabled=False)
+        self.assertEqual(self.client.post('/api/quark-account/session', json={}, headers=headers).status_code, 401)

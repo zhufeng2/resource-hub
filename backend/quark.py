@@ -88,13 +88,18 @@ class QuarkService:
         account = self.store.quark_account(user_id)
         return {'bound': bool(account), **(account or {})}
 
-    def saved_cookie(self, user_id):
-        # Only the authenticated, CSRF-protected web reveal endpoint calls this.
+    def cookie_session(self, user_id):
+        # Return the binding ID and secret from the same row, so concurrent rebinds cannot mix versions.
         try:
             account = self.store.quark_account(user_id, secret=True)
         except (InvalidToken, OSError, ValueError, KeyError, TypeError, AttributeError):
             raise QuarkError('credential_unavailable', '无法读取已保存的 Cookie，请重新绑定。', 422) from None
-        if not account:
+        return {'bound': bool(account), **(account or {})}
+
+    def saved_cookie(self, user_id):
+        # Only authenticated, CSRF-protected credential endpoints call this.
+        account = self.cookie_session(user_id)
+        if not account['bound']:
             raise QuarkError('quark_not_bound', '尚未绑定夸克账号。', 404)
         return account['cookie']
 

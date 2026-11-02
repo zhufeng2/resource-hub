@@ -70,6 +70,14 @@ class Web:
             raise WebError('请求参数不正确。')
         return reply({'cookie': self.quark.saved_cookie(user['id'])})
 
+    async def quark_cookie_session(self, request):
+        user = self.user(request, write=True)
+        if await self.body(request):
+            raise WebError('请求参数不正确。')
+        if not self.store.rate('quark-session:' + str(user['id']), 60, 60):
+            raise WebError('同步操作过于频繁，请稍后重试。', 429)
+        return reply(self.quark.cookie_session(user['id']))
+
     async def body(self, request):
         try:
             data = await request.json()
@@ -515,6 +523,7 @@ class Web:
             ('/api/mcp-token', self.mcp_token, ['GET', 'POST', 'DELETE']),
             ('/api/quark-account', self.quark_account, ['GET', 'POST', 'DELETE']),
             ('/api/quark-account/reveal', self.reveal_quark_cookie, ['POST']),
+            ('/api/quark-account/session', self.quark_cookie_session, ['POST']),
             ('/api/users', self.users, ['GET', 'POST', 'PATCH']),
             ('/api/users/{user_id:int}', self.delete_user, ['DELETE']),
             ('/api/check', self.check_links, ['POST'])]
