@@ -24,3 +24,10 @@ node_modules/
 backend/Dockerfile.backup
 skill-backups/
 skills/quarkclouddrive/scripts/*.cjs
+
+
+# Android client is maintained in zhufeng2/streambox.
+/android/
+/releases/
+*.apk
+*.aab
