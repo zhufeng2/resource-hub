@@ -10,6 +10,7 @@ from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+from backend.library_sync import validate_changes
 from backend.errors import SearchFailure
 from backend.email_verification import VerificationMailer, normalize_email, code_identity
 from backend.service import checkable_url, validate_preferences
@@ -348,6 +349,19 @@ class Web:
             raise WebError('搜索记录不存在或已删除', 404)
         return reply({'deleted_ids': ids, 'items': self.store.recent(user['id'])})
 
+    async def media_library(self, request):
+        user = self.user(request, write=request.method == 'POST')
+        if request.method == 'GET':
+            raw = request.query_params.get('after', '0')
+            if not re.fullmatch(r'[0-9]{1,16}', raw):
+                raise WebError('同步游标不正确。')
+            return reply(self.store.library_changes(user['id'], int(raw)))
+        try:
+            changes = validate_changes(await self.body(request))
+            return reply(self.store.library_merge(user['id'], changes))
+        except ValueError as exc:
+            raise WebError('同步数据不正确或记录数量已达上限。') from exc
+
     async def preferences(self, request):
         user = self.user(request, write=True)
         value = self.store.preferences(user['id'])
@@ -495,6 +509,7 @@ class Web:
             ('/api/history', self.history, ['GET']), ('/api/history', self.delete_history, ['DELETE']),
             ('/api/history/{id}', self.delete_history, ['DELETE']),
             ('/api/preferences', self.preferences, ['PUT']),
+            ('/api/library', self.media_library, ['GET', 'POST']),
             ('/api/catalog', self.catalog, ['GET']), ('/api/password', self.password, ['POST']),
             ('/api/connections/revoke', self.revoke_connections, ['POST']),
             ('/api/mcp-token', self.mcp_token, ['GET', 'POST', 'DELETE']),

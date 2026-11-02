@@ -1,5 +1,7 @@
 # Resource Hub
 
+服务器前端与后端仓库。Android 客户端已独立到 [StreamBox（私有仓库）](https://github.com/zhufeng2/streambox)，两个项目通过账号、搜索和云同步接口协作。见[仓库分工](docs/REPOSITORIES.md)。
+
 专注夸克网盘的资源搜索与整理。网页负责搜索和账号管理，MCP 提供搜索、个人网盘查询、转存、目录整理、文本创建和观看进度归零；可选 Skill 只提供操作流程。
 
 [在线体验](https://pan.sysscitech.com/) · [网页与账号](web/README.md) · [MCP 接入与工具](mcp/README.md) · [部署与维护](backend/README.md) · [开发指南](docs/DEVELOPMENT.md)

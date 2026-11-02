@@ -78,6 +78,14 @@ class Store:
                     hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, csrf TEXT NOT NULL, expires REAL NOT NULL);
                 CREATE TABLE IF NOT EXISTS preferences (
                     user_id INTEGER PRIMARY KEY, value TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS media_library (
+                    user_id INTEGER NOT NULL, kind TEXT NOT NULL, media_id TEXT NOT NULL,
+                    revision INTEGER NOT NULL, deleted INTEGER NOT NULL, payload TEXT NOT NULL,
+                    mutation_id TEXT NOT NULL, updated REAL NOT NULL,
+                    PRIMARY KEY(user_id,kind,media_id));
+                CREATE INDEX IF NOT EXISTS media_library_revision ON media_library(user_id,revision);
+                CREATE TABLE IF NOT EXISTS media_library_versions (
+                    user_id INTEGER PRIMARY KEY, revision INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS quark_accounts (
                     user_id INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, ciphertext BLOB NOT NULL,
                     allow_writes INTEGER NOT NULL DEFAULT 0, updated REAL NOT NULL);
@@ -192,6 +200,8 @@ class Store:
             db.execute('DELETE FROM web_sessions WHERE user_id=?', (user_id,))
             db.execute('DELETE FROM searches WHERE user_id=?', (user_id,))
             db.execute('DELETE FROM preferences WHERE user_id=?', (user_id,))
+            db.execute('DELETE FROM media_library WHERE user_id=?', (user_id,))
+            db.execute('DELETE FROM media_library_versions WHERE user_id=?', (user_id,))
             db.execute('DELETE FROM quark_accounts WHERE user_id=?', (user_id,))
             # Older installations may still have the removed source-account table.
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='bindings'").fetchone():
@@ -341,6 +351,53 @@ class Store:
     def web_logout(self, token):
         with self.connection(True) as db:
             db.execute('DELETE FROM web_sessions WHERE hash=?', (digest(token),))
+
+    @staticmethod
+    def library_row(row):
+        return {'kind': row['kind'], 'id': row['media_id'], 'revision': row['revision'],
+                'deleted': bool(row['deleted']), 'data': json.loads(row['payload']),
+                'mutation_id': row['mutation_id']}
+
+    def library_changes(self, user_id, after=0):
+        with self.connection() as db:
+            rows = db.execute('SELECT * FROM media_library WHERE user_id=? AND revision>? ORDER BY revision LIMIT 101',
+                              (user_id, after)).fetchall()
+            items = [self.library_row(row) for row in rows[:100]]
+            return {'items': items, 'cursor': items[-1]['revision'] if items else after, 'has_more': len(rows) > 100}
+
+    def library_merge(self, user_id, changes):
+        items, conflicts = [], 0
+        with self.connection(True) as db:
+            db.execute('INSERT OR IGNORE INTO media_library_versions VALUES(?,0)', (user_id,))
+            revision = db.execute('SELECT revision FROM media_library_versions WHERE user_id=?', (user_id,)).fetchone()[0]
+            for change in changes:
+                old = db.execute('SELECT * FROM media_library WHERE user_id=? AND kind=? AND media_id=?',
+                                 (user_id, change['kind'], change['id'])).fetchone()
+                if old and old['mutation_id'] == change['mutation_id']:
+                    items.append(self.library_row(old))
+                    continue
+                data = dict(change['data'])
+                if data.get('updatedAt', 0) > int(time.time() * 1000) + 300_000:
+                    data['updatedAt'] = int(time.time() * 1000)
+                newer_watch = (old and change['kind'] == 'watch' and not old['deleted'] and not change['deleted']
+                               and change['base_revision'] <= old['revision']
+                               and data.get('updatedAt', 0) > json.loads(old['payload']).get('updatedAt', 0))
+                if change['base_revision'] != (old['revision'] if old else 0) and not newer_watch:
+                    conflicts += 1
+                    items.append(self.library_row(old) if old else dict(kind=change['kind'], id=change['id'],
+                                 revision=0, deleted=True, data={}, mutation_id=''))
+                    continue
+                if not old and db.execute('SELECT COUNT(*) FROM media_library WHERE user_id=?', (user_id,)).fetchone()[0] >= 2000:
+                    raise ValueError('library_capacity_exceeded')
+                revision += 1
+                payload = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+                db.execute('INSERT OR REPLACE INTO media_library VALUES(?,?,?,?,?,?,?,?)',
+                           (user_id, change['kind'], change['id'], revision, int(change['deleted']), payload,
+                            change['mutation_id'], time.time()))
+                items.append(dict(kind=change['kind'], id=change['id'], revision=revision, deleted=change['deleted'],
+                                  data=data, mutation_id=change['mutation_id']))
+            db.execute('UPDATE media_library_versions SET revision=? WHERE user_id=?', (revision, user_id))
+        return {'items': items, 'conflicts': conflicts}
 
     def preferences(self, user_id, value=None):
         defaults = {'cloud_types': ['quark'], 'channels': [], 'plugins': [], 'src': 'all',
